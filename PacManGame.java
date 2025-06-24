@@ -1,69 +1,249 @@
 import javax.swing.*;
+import javax.swing.Timer;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
-import java.util.*;
-import java.util.List;
-import javax.swing.Timer;
+import java.awt.geom.Ellipse2D;
+import java.awt.geom.Rectangle2D;
 import java.io.*;
+import java.net.URI;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Queue;
+import java.util.Random;
+import java.util.Set;
 
+/**
+ * EN: The main class for the Cyber Runner game, a Pac-Man style game.
+ * It handles the game window, game states, game logic, and user interface.
+ * FR: La classe principale du jeu Cyber Runner, un jeu de style Pac-Man.
+ * Elle gère la fenêtre de jeu, les états de jeu, la logique de jeu et l'interface utilisateur.
+ */
 public class PacManGame extends JFrame implements KeyListener, ActionListener {
 
-    private static final int WIDTH = 600;
-    private static final int HEIGHT = 600;
-    private static final int CELL_SIZE = 30;
+    // =================================================================================
+    // Constants
+    // =================================================================================
+
+    /**
+     * EN: The width of the game window in pixels.
+     * FR: La largeur de la fenêtre de jeu en pixels.
+     */
+    private static final int WIDTH = 800;
+    /**
+     * EN: The height of the game window in pixels.
+     * FR: La hauteur de la fenêtre de jeu en pixels.
+     */
+    private static final int HEIGHT = 800;
+    /**
+     * EN: The size of each cell in the game grid in pixels.
+     * FR: La taille de chaque cellule dans la grille de jeu en pixels.
+     */
+    private static final int CELL_SIZE = 40;
+    /**
+     * EN: The filename for storing high scores.
+     * FR: Le nom du fichier pour stocker les meilleurs scores.
+     */
     private static final String HIGHSCORE_FILE = "highscores.dat";
+    /**
+     * EN: The filename for storing the player's profile.
+     * FR: Le nom du fichier pour stocker le profil du joueur.
+     */
+    private static final String PROFILE_FILE = "player_profile.dat";
+    /**
+     * EN: The maximum number of high scores to store.
+     * FR: Le nombre maximum de meilleurs scores à stocker.
+     */
     private static final int MAX_HIGHSCORES = 5;
 
+    // =================================================================================
+    // Game State Enum
+    // =================================================================================
+
+    /**
+     * EN: Represents the different states of the game.
+     * FR: Représente les différents états du jeu.
+     */
     private enum GameState {
         MENU, PLAYING, PAUSED, GAME_OVER, WIN, HIGHSCORES
     }
 
     private GameState currentGameState;
 
-    // Game elements
-    private Point playerPosition;
-    private List<Point> dots;
-    private Set<Point> obstacles;
-    private List<Point> enemies;
-    private int score;
-    private Timer gameTimer;
+    // =================================================================================
+    // Game Elements
+    // =================================================================================
 
+    /**
+     * EN: The current position of the player on the grid.
+     * FR: La position actuelle du joueur sur la grille.
+     */
+    private Point playerPosition;
+    /**
+     * EN: The list of dots that the player needs to collect.
+     * FR: La liste des points que le joueur doit collecter.
+     */
+    private List<Point> dots;
+    /**
+     * EN: The set of obstacles (walls) on the grid.
+     * FR: L'ensemble des obstacles (murs) sur la grille.
+     */
+    private Set<Point> obstacles;
+    /**
+     * EN: The player's current score.
+     * FR: Le score actuel du joueur.
+     */
+    private int score;
+    /**
+     * EN: The main timer for the game loop.
+     * FR: Le minuteur principal pour la boucle de jeu.
+     */
+    private Timer gameTimer;
+    /**
+     * EN: A random number generator for various game events.
+     * FR: Un générateur de nombres aléatoires pour divers événements de jeu.
+     */
     private Random random;
 
-    private int currentLevel;
-    private int maxLevel = 20; // MODIFIED: Initialise maxLevel à 20 ici
-    private int targetScore; 
-    private int initialDotCount; 
+    // =================================================================================
+    // Level and Score Management
+    // =================================================================================
 
-    // Grid dimensions
+    private int currentLevel = 1;
+    private int maxLevel = 20;
+    private int unlockedLevel = 1;
+    private int targetScore;
+
+    // =================================================================================
+    // Grid Dimensions
+    // =================================================================================
+
     private int gridCols;
     private int gridRows;
 
+    // =================================================================================
     // UI Components
+    // =================================================================================
+
     private JLayeredPane layeredPane;
     private GamePanel gamePanel;
-    private JPanel menuPanel;
-    private JPanel pausePanel;
-    private JPanel endScreenPanel;
-    private JPanel highScoresPanel;
+    private JPanel endScreenPanel, highScoresPanel, creditsPanel;
     private JLabel endMessageLabel;
     private JTextArea highScoresDisplay;
 
-    // High Scores
+    /**
+     * EN: The list of high score entries.
+     * FR: La liste des entrées de meilleurs scores.
+     */
     private List<HighScoreEntry> highScores;
 
-    // Constructor
+    // =================================================================================
+    // Player Profile
+    // =================================================================================
+
+    /**
+     * EN: Represents the player's profile, storing statistics.
+     * FR: Représente le profil du joueur, stockant des statistiques.
+     */
+    private static class PlayerProfile implements Serializable {
+        private static final long serialVersionUID = 1L;
+        long totalScore = 0;
+        int powerupsCollected = 0;
+        int enemiesDefeated = 0;
+        int levelsCompleted = 0;
+    }
+    private PlayerProfile playerProfile;
+    
+    // =================================================================================
+    // UI Themes
+    // =================================================================================
+
+    /**
+     * EN: Represents the different UI themes for the game.
+     * FR: Représente les différents thèmes d'interface utilisateur pour le jeu.
+     */
+    private enum UITheme {
+        CYBER_NEON("Cyber Néon", new Color(5, 5, 15), new Color(0, 80, 200), new Color(0, 180, 255, 150), Color.CYAN),
+        VOLCANIC_CORE("Noyau Volcanique", new Color(20, 5, 5), new Color(180, 50, 0), new Color(255, 100, 0, 150), Color.ORANGE),
+        ARCTIC_MATRIX("Matrice Arctique", new Color(5, 15, 20), new Color(0, 100, 120), new Color(100, 200, 255, 150), Color.WHITE);
+
+        final String name; final Color bgColor; final Color wallColor; final Color wallGlow; final Color accentColor;
+        UITheme(String name, Color bg, Color wall, Color glow, Color accent) {
+            this.name = name; this.bgColor = bg; this.wallColor = wall; this.wallGlow = glow; this.accentColor = accent;
+        }
+    }
+    private UITheme currentTheme = UITheme.CYBER_NEON;
+
+    // =================================================================================
+    // Menu Logic
+    // =================================================================================
+
+    private CardLayout menuCardLayout;
+    private JPanel menuContainerPanel;
+    private MenuBackgroundPanel menuBackgroundPanel;
+    private Timer menuTimer;
+    private boolean backgroundAnimationEnabled = true;
+
+    // =================================================================================
+    // Power-ups
+    // =================================================================================
+
+    private enum PowerUpType { SUPER_PELLET, FREEZE, SHIELD }
+    private static class PowerUp {
+        Point position; PowerUpType type; long spawnTime;
+        PowerUp(Point position, PowerUpType type) { this.position = position; this.type = type; this.spawnTime = System.currentTimeMillis(); }
+    }
+    private List<PowerUp> powerUps;
+    private boolean isShieldActive = false, areEnemiesFrozen = false, areEnemiesVulnerable = false;
+    private long shieldEndTime = 0, freezeEndTime = 0, vulnerableEndTime = 0;
+
+    // =================================================================================
+    // Enemies
+    // =================================================================================
+
+    private enum EnemyState { PATROLLING, AGGRO_TELEGRAPH, CHASING, FLEEING }
+    private enum EnemyBehavior { HUNTER, AMBUSHER, FLANKER, ROAMER }
+    private static class Enemy {
+        Point position; EnemyBehavior behavior; EnemyState state = EnemyState.PATROLLING;
+        long stateChangeTime = 0;
+        int pathRecalculationCounter = 0;
+
+        Enemy(Point position, EnemyBehavior behavior) {
+            this.position = position; this.behavior = behavior;
+        }
+        
+        void changeState(EnemyState newState) {
+            if(this.state != newState) {
+                this.state = newState;
+                this.stateChangeTime = System.currentTimeMillis();
+            }
+        }
+    }
+    private List<Enemy> enemies;
+    private Set<EnemyBehavior> discoveredEnemies = new HashSet<>();
+
+    /**
+     * EN: Constructor for the PacManGame class. Initializes the game window and all game components.
+     * FR: Constructeur pour la classe PacManGame. Initialise la fenêtre de jeu et tous les composants du jeu.
+     */
     public PacManGame() {
-        setTitle("Le Labyrinthe de Cubeman"); 
+        setTitle("Cyber Runner");
         setSize(WIDTH, HEIGHT);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setResizable(false);
         setLocationRelativeTo(null);
-
+        
+        powerUps = new ArrayList<>();
+        enemies = new ArrayList<>();
         random = new Random();
+        highScores = new ArrayList<>();
 
         layeredPane = new JLayeredPane();
         layeredPane.setPreferredSize(new Dimension(WIDTH, HEIGHT));
@@ -71,482 +251,584 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
 
         gamePanel = new GamePanel();
         gamePanel.setBounds(0, 0, WIDTH, HEIGHT);
-        layeredPane.add(gamePanel, JLayeredPane.DEFAULT_LAYER);
-
-        initUIComponents(); 
-
+        layeredPane.add(gamePanel, JLayeredPane.DEFAULT_LAYER, 0);
+        
+        initUIComponents();
         addKeyListener(this);
         setFocusable(true);
-        setFocusTraversalKeysEnabled(false);
 
-        initGame(); 
-        
+        initGame();
         loadHighScores();
+        loadProfile();
 
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosing(java.awt.event.WindowEvent windowEvent) {
-                saveHighScores(); 
+                saveHighScores();
+                saveProfile();
             }
         });
-        
         showMenu();
     }
-
+    
+    /**
+     * EN: Initializes all UI components, including menus and game panels.
+     * FR: Initialise tous les composants de l'interface utilisateur, y compris les menus et les panneaux de jeu.
+     */
     private void initUIComponents() {
-        // Menu Panel
-        menuPanel = createPanel(BoxLayout.Y_AXIS, new Color(20, 20, 20), new Insets(100, 0, 0, 0)); 
-        menuPanel.add(createLabel("Le Labyrinthe de Cubeman", Color.YELLOW, new Font("Arial", Font.BOLD, 28), Component.CENTER_ALIGNMENT)); 
-        menuPanel.add(Box.createRigidArea(new Dimension(0, 30)));
+        menuCardLayout = new CardLayout();
+        menuContainerPanel = new JPanel(menuCardLayout);
+        menuContainerPanel.setBounds(0, 0, WIDTH, HEIGHT);
+        menuContainerPanel.setOpaque(false);
+        
+        menuBackgroundPanel = new MenuBackgroundPanel();
+        menuBackgroundPanel.setBounds(0, 0, WIDTH, HEIGHT);
 
-        menuPanel.add(createStyledButton("Nouvelle Partie (Choisir Niveau)", e -> chooseStartingLevel(), 250, 50, new Color(50, 50, 50), Color.WHITE, new Color(0, 180, 180), 2)); 
-        menuPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-        menuPanel.add(createStyledButton("Meilleurs Scores", e -> showHighScores(), 250, 50, new Color(50, 50, 50), Color.WHITE, new Color(0, 180, 180), 2)); 
-        menuPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-        menuPanel.add(createStyledButton("Instructions", e -> showInstructions(), 250, 50, new Color(50, 50, 50), Color.WHITE, new Color(0, 180, 180), 2)); 
-        menuPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-        menuPanel.add(createStyledButton("Crédits", e -> showCredits(), 250, 50, new Color(50, 50, 50), Color.WHITE, new Color(0, 180, 180), 2)); 
-        menuPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-        menuPanel.add(createStyledButton("Quitter", e -> System.exit(0), 250, 50, new Color(50, 50, 50), Color.WHITE, new Color(0, 180, 180), 2)); 
-        menuPanel.add(Box.createRigidArea(new Dimension(0, 15))); 
-        layeredPane.add(menuPanel, JLayeredPane.PALETTE_LAYER);
+        JPanel mainMenuPanel = createTransparentPanel(new GridBagLayout());
+        GridBagConstraints gbc = createGBC();
+        mainMenuPanel.add(createLabel("CYBER RUNNER", currentTheme.accentColor, new Font("Orbitron", Font.BOLD, 56), SwingConstants.CENTER), gbc);
+        gbc.insets = new Insets(10, 0, 10, 0);
+        mainMenuPanel.add(new AnimatedButton("Nouvelle Partie", e -> menuCardLayout.show(menuContainerPanel, "LEVEL_SELECT")), gbc);
+        mainMenuPanel.add(new AnimatedButton("Meilleurs Scores", e -> showHighScores()), gbc);
+        mainMenuPanel.add(new AnimatedButton("Crédits", e -> showCredits()), gbc);
+        mainMenuPanel.add(new AnimatedButton("Portfolio", e -> openURL("https://github.com/TechNerdSam")), gbc);
+        mainMenuPanel.add(new AnimatedButton("Contact", e -> openURL("mailto:samynantoy@gmail.com")), gbc);
+        mainMenuPanel.add(new AnimatedButton("Options", e -> menuCardLayout.show(menuContainerPanel, "OPTIONS")), gbc);
+        mainMenuPanel.add(new AnimatedButton("Quitter", e -> System.exit(0)), gbc);
+        
+        JPanel levelSelectPanel = createTransparentPanel(new GridBagLayout());
+        levelSelectPanel.add(createLabel("SÉLECTION DE MISSION", Color.YELLOW, new Font("Orbitron", Font.BOLD, 36), SwingConstants.CENTER), gbc);
+        JPanel levelGrid = new JPanel(new GridLayout(4, 5, 10, 10));
+        levelGrid.setOpaque(false);
+        for(int i = 1; i <= 20; i++) {
+            int levelNum = i;
+            AnimatedButton levelButton = new AnimatedButton(String.valueOf(i));
+            levelButton.setEnabled(i <= unlockedLevel);
+            levelButton.addActionListener(e -> startPredefinedGame(levelNum));
+            levelGrid.add(levelButton);
+        }
+        levelSelectPanel.add(levelGrid, gbc);
+        levelSelectPanel.add(new AnimatedButton("Retour", e -> menuCardLayout.show(menuContainerPanel, "MAIN")), gbc);
+        
+        creditsPanel = createTransparentPanel(new GridBagLayout());
+        
+        JPanel optionsPanel = createTransparentPanel(new GridBagLayout());
+        optionsPanel.add(createLabel("OPTIONS", Color.YELLOW, new Font("Orbitron", Font.BOLD, 36), SwingConstants.CENTER), gbc);
+        JCheckBox animCheckbox = new JCheckBox("Activer l'arrière-plan animé");
+        configureCheckbox(animCheckbox);
+        animCheckbox.setSelected(true);
+        animCheckbox.addActionListener(e -> backgroundAnimationEnabled = animCheckbox.isSelected());
+        optionsPanel.add(animCheckbox, gbc);
+        
+        JComboBox<String> themeSelector = new JComboBox<>(new String[]{UITheme.CYBER_NEON.name, UITheme.VOLCANIC_CORE.name, UITheme.ARCTIC_MATRIX.name});
+        themeSelector.addActionListener(e -> {
+            String selected = (String) themeSelector.getSelectedItem();
+            for(UITheme theme : UITheme.values()) {
+                if(theme.name.equals(selected)) { currentTheme = theme; break; }
+            }
+        });
+        optionsPanel.add(themeSelector, gbc);
+        optionsPanel.add(new AnimatedButton("Retour", e -> menuCardLayout.show(menuContainerPanel, "MAIN")), gbc);
 
-        // Pause Panel
-        pausePanel = createPanel(BoxLayout.Y_AXIS, new Color(0, 0, 0, 150), new Insets(150, 0, 0, 0));
-        pausePanel.setVisible(false);
-        pausePanel.add(createLabel("PAUSE", Color.WHITE, new Font("Arial", Font.BOLD, 40), Component.CENTER_ALIGNMENT)); 
-        pausePanel.add(Box.createRigidArea(new Dimension(0, 40)));
+        menuContainerPanel.add(mainMenuPanel, "MAIN");
+        menuContainerPanel.add(levelSelectPanel, "LEVEL_SELECT");
+        menuContainerPanel.add(creditsPanel, "CREDITS");
+        menuContainerPanel.add(optionsPanel, "OPTIONS");
 
-        pausePanel.add(createStyledButton("Reprendre", e -> resumeGame(), 200, 40, new Color(50, 50, 50), Color.WHITE, new Color(0, 180, 180), 1)); 
-        pausePanel.add(Box.createRigidArea(new Dimension(0, 10)));
-        pausePanel.add(createStyledButton("Redémarrer", e -> { restartGame(); hidePauseScreen(); }, 200, 40, new Color(50, 50, 50), Color.WHITE, new Color(0, 180, 180), 1)); 
-        pausePanel.add(Box.createRigidArea(new Dimension(0, 10)));
-        pausePanel.add(createStyledButton("Quitter au Menu", e -> showMenu(), 200, 40, new Color(50, 50, 50), Color.WHITE, new Color(0, 180, 180), 1)); 
-        pausePanel.add(Box.createRigidArea(new Dimension(0, 10)));
-        layeredPane.add(pausePanel, JLayeredPane.MODAL_LAYER);
-
-        // End Screen Panel
-        endScreenPanel = createPanel(BoxLayout.Y_AXIS, new Color(0, 0, 0, 200), new Insets(150, 0, 0, 0));
+        layeredPane.add(menuBackgroundPanel, JLayeredPane.DEFAULT_LAYER, 0);
+        layeredPane.add(menuContainerPanel, JLayeredPane.PALETTE_LAYER, 1);
+        
+        // --- Redesign "Game Over" Panel ---
+        endScreenPanel = new JPanel();
+        endScreenPanel.setBounds(0, 0, WIDTH, HEIGHT);
+        endScreenPanel.setBackground(new Color(10, 5, 15, 235));
+        endScreenPanel.setLayout(new GridBagLayout());
         endScreenPanel.setVisible(false);
-        endMessageLabel = createLabel("", Color.WHITE, new Font("Arial", Font.BOLD, 36), Component.CENTER_ALIGNMENT); 
-        endScreenPanel.add(endMessageLabel);
-        endScreenPanel.add(Box.createRigidArea(new Dimension(0, 40)));
+        
+        GridBagConstraints gbcEnd = new GridBagConstraints();
+        gbcEnd.gridwidth = GridBagConstraints.REMAINDER;
+        gbcEnd.insets = new Insets(15, 0, 15, 0);
 
-        endScreenPanel.add(createStyledButton("Rejouer", e -> { restartGame(); hideEndScreen(); }, 200, 40, new Color(50, 50, 50), Color.WHITE, new Color(0, 180, 180), 1)); 
-        endScreenPanel.add(Box.createRigidArea(new Dimension(0, 10)));
-        endScreenPanel.add(createStyledButton("Quitter au Menu", e -> showMenu(), 200, 40, new Color(50, 50, 50), Color.WHITE, new Color(0, 180, 180), 1)); 
-        endScreenPanel.add(Box.createRigidArea(new Dimension(0, 10)));
-        layeredPane.add(endScreenPanel, JLayeredPane.MODAL_LAYER);
+        endMessageLabel = createLabel("", Color.RED, new Font("Ebrima", Font.BOLD, 48), SwingConstants.CENTER);
+        endScreenPanel.add(endMessageLabel, gbcEnd);
 
-        // High Scores Panel
-        highScoresPanel = createPanel(BoxLayout.Y_AXIS, new Color(0, 0, 0, 200), new Insets(50, 0, 0, 0));
+        JLabel endSubMessage = createLabel("Votre score a été enregistré.", Color.LIGHT_GRAY, new Font("Ebrima", Font.PLAIN, 22), SwingConstants.CENTER);
+        endScreenPanel.add(endSubMessage, gbcEnd);
+        
+        gbcEnd.insets = new Insets(50, 0, 15, 0);
+        endScreenPanel.add(new AnimatedButton("Rejouer", e -> { restartGame(); hideEndScreen(); }), gbcEnd);
+        gbcEnd.insets = new Insets(15, 0, 15, 0);
+        endScreenPanel.add(new AnimatedButton("Quitter au Menu", e -> showMenu()), gbcEnd);
+        layeredPane.add(endScreenPanel, JLayeredPane.MODAL_LAYER, 2);
+        
+        // --- Redesign "High Scores" Panel ---
+        highScoresPanel = new JPanel();
+        highScoresPanel.setBounds(0, 0, WIDTH, HEIGHT);
+        highScoresPanel.setBackground(new Color(10, 5, 15, 245));
+        highScoresPanel.setLayout(new GridBagLayout());
         highScoresPanel.setVisible(false);
-        highScoresPanel.add(createLabel("MEILLEURS SCORES", Color.YELLOW, new Font("Arial", Font.BOLD, 30), Component.CENTER_ALIGNMENT));
-        highScoresPanel.add(Box.createRigidArea(new Dimension(0, 30)));
 
-        highScoresDisplay = new JTextArea(10, 20);
+        GridBagConstraints gbcHigh = new GridBagConstraints();
+        gbcHigh.gridwidth = GridBagConstraints.REMAINDER;
+        gbcHigh.insets = new Insets(10, 0, 10, 0);
+        gbcHigh.fill = GridBagConstraints.HORIZONTAL;
+        
+        JLabel titleLabel = createLabel("PANTHÉON DES HACKERS", new Color(0, 200, 255), new Font("Ebrima", Font.BOLD, 40), SwingConstants.CENTER);
+        gbcHigh.insets = new Insets(0, 0, 40, 0);
+        highScoresPanel.add(titleLabel, gbcHigh);
+
+        highScoresDisplay = new JTextArea(10, 30);
         highScoresDisplay.setEditable(false);
-        highScoresDisplay.setBackground(Color.BLACK);
+        highScoresDisplay.setBackground(new Color(15, 10, 25));
         highScoresDisplay.setForeground(Color.WHITE);
-        highScoresDisplay.setFont(new Font("Monospaced", Font.PLAIN, 20));
-        highScoresDisplay.setMargin(new Insets(10, 50, 10, 50));
+        highScoresDisplay.setFont(new Font("Consolas", Font.BOLD, 24));
+        highScoresDisplay.setMargin(new Insets(20, 20, 20, 20));
+        
         JScrollPane scrollPane = new JScrollPane(highScoresDisplay);
-        scrollPane.setAlignmentX(Component.CENTER_ALIGNMENT);
-        scrollPane.setMaximumSize(new Dimension(400, 300));
-        highScoresPanel.add(scrollPane);
-        highScoresPanel.add(Box.createRigidArea(new Dimension(0, 30)));
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(0, 200, 255), 2));
+        scrollPane.getViewport().setBackground(new Color(15, 10, 25));
+        
+        gbcHigh.insets = new Insets(10, 50, 10, 50);
+        highScoresPanel.add(scrollPane, gbcHigh);
 
-        highScoresPanel.add(createStyledButton("Retour au Menu", e -> showMenu(), 200, 40, new Color(50, 50, 50), Color.WHITE, new Color(0, 180, 180), 1)); 
-        layeredPane.add(highScoresPanel, JLayeredPane.MODAL_LAYER);
+        gbcHigh.insets = new Insets(40, 0, 10, 0);
+        highScoresPanel.add(new AnimatedButton("Retour au Menu", e -> showMenu()), gbcHigh);
+        layeredPane.add(highScoresPanel, JLayeredPane.MODAL_LAYER, 3);
+    }
+    
+    /**
+     * EN: Creates a GridBagConstraints object with default settings for the menu UI.
+     * FR: Crée un objet GridBagConstraints avec des paramètres par défaut pour l'interface utilisateur du menu.
+     * @return A new GridBagConstraints object.
+     */
+    private GridBagConstraints createGBC() {
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridwidth = GridBagConstraints.REMAINDER;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(20, 0, 20, 0);
+        return gbc;
     }
 
-    private JPanel createPanel(int layoutAxis, Color bgColor, Insets borderInsets) {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, layoutAxis));
-        panel.setBackground(bgColor);
-        panel.setBorder(BorderFactory.createEmptyBorder(borderInsets.top, borderInsets.left, borderInsets.bottom, borderInsets.right));
-        panel.setBounds(0, 0, WIDTH, HEIGHT);
+    /**
+     * EN: Configures the appearance of a JCheckBox for the menu.
+     * FR: Configure l'apparence d'une JCheckBox pour le menu.
+     * @param cb The JCheckBox to configure.
+     */
+    private void configureCheckbox(JCheckBox cb) {
+        cb.setFont(new Font("Orbitron", Font.PLAIN, 20));
+        cb.setOpaque(false);
+        cb.setForeground(Color.WHITE);
+    }
+
+    /**
+     * EN: Starts a new game at a specific level.
+     * FR: Commence une nouvelle partie à un niveau spécifique.
+     * @param level The level to start the game at.
+     */
+    private void startPredefinedGame(int level) {
+        currentLevel = level;
+        startGame();
+    }
+
+    /**
+     * EN: Creates a transparent JPanel with a specified layout manager.
+     * FR: Crée un JPanel transparent avec un gestionnaire de layout spécifié.
+     * @param layout The layout manager to use for the panel.
+     * @return A new transparent JPanel.
+     */
+    private JPanel createTransparentPanel(LayoutManager layout) {
+        JPanel panel = new JPanel(layout);
+        panel.setOpaque(false);
         return panel;
     }
 
-    private JLabel createLabel(String text, Color fgColor, Font font, float alignmentX) {
-        JLabel label = new JLabel(text);
-        label.setAlignmentX(alignmentX);
+    /**
+     * EN: Creates a JLabel with specified text, color, font, and alignment.
+     * FR: Crée un JLabel avec un texte, une couleur, une police et un alignement spécifiés.
+     * @param text The text to display on the label.
+     * @param fgColor The foreground color of the label.
+     * @param font The font to use for the label.
+     * @param horizontalAlignment The horizontal alignment of the label's text.
+     * @return A new configured JLabel.
+     */
+    private JLabel createLabel(String text, Color fgColor, Font font, int horizontalAlignment) {
+        JLabel label = new JLabel(text, horizontalAlignment);
         label.setForeground(fgColor);
         label.setFont(font);
         return label;
     }
-
-    private JButton createStyledButton(String text, ActionListener listener, int maxWidth, int maxHeight, Color bgColor, Color fgColor, Color borderColor, int borderWidth) {
-        JButton button = new JButton(text);
-        button.setAlignmentX(Component.CENTER_ALIGNMENT);
-        button.setMaximumSize(new Dimension(maxWidth, maxHeight));
-        button.setFont(new Font("Arial", Font.BOLD, 20)); 
-        button.setBackground(bgColor);
-        button.setForeground(fgColor);
-        button.setFocusPainted(false);
-        button.addActionListener(listener);
-        button.setBorder(BorderFactory.createLineBorder(borderColor, borderWidth));
-        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override
-            public void mouseEntered(java.awt.event.MouseEvent evt) {
-                button.setBackground(bgColor.brighter());
-            }
-            @Override
-            public void mouseExited(java.awt.event.MouseEvent evt) {
-                button.setBackground(bgColor);
-            }
-        });
-        return button;
+    
+    /**
+     * EN: Opens a URL in the default web browser.
+     * FR: Ouvre une URL dans le navigateur web par défaut.
+     * @param url The URL to open.
+     */
+    private void openURL(String url) {
+        try {
+            Desktop.getDesktop().browse(new URI(url));
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Impossible d'ouvrir le lien.", "Erreur", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
+    /**
+     * EN: Displays the credits screen.
+     * FR: Affiche l'écran des crédits.
+     */
+    private void showCredits() {
+        creditsPanel.removeAll();
+        GridBagConstraints gbc = createGBC();
+        gbc.insets = new Insets(15,0,15,0);
+        creditsPanel.add(createLabel("CRÉDITS", Color.YELLOW, new Font("Orbitron", Font.BOLD, 36), SwingConstants.CENTER), gbc);
+        creditsPanel.add(createLabel("Conception et Développement", Color.WHITE, new Font("Ebrima", Font.PLAIN, 22), SwingConstants.CENTER), gbc);
+        creditsPanel.add(createLabel("Samyn-Antoy ABASSE", new Color(0, 200, 255), new Font("Ebrima", Font.BOLD, 28), SwingConstants.CENTER), gbc);
+        
+        gbc.insets = new Insets(40,0,15,0);
+        creditsPanel.add(createLabel("Inspiré par les jeux de labyrinthe classiques.", Color.GRAY, new Font("Ebrima", Font.ITALIC, 18), SwingConstants.CENTER), gbc);
+        
+        gbc.insets = new Insets(50,0,15,0);
+        creditsPanel.add(new AnimatedButton("Retour", e -> menuCardLayout.show(menuContainerPanel, "MAIN")), gbc);
+
+        creditsPanel.revalidate();
+        creditsPanel.repaint();
+        menuCardLayout.show(menuContainerPanel, "CREDITS");
+    }
+
+    /**
+     * EN: Initializes or resets the game state to its default values.
+     * FR: Initialise ou réinitialise l'état du jeu à ses valeurs par défaut.
+     */
     private void initGame() {
         currentGameState = GameState.MENU;
         score = 0;
         playerPosition = new Point(1, 1);
-
         dots = new ArrayList<>();
         obstacles = new HashSet<>();
-        enemies = new ArrayList<>();
-        highScores = new ArrayList<>();
-
         gridCols = WIDTH / CELL_SIZE;
         gridRows = HEIGHT / CELL_SIZE;
-
-        gameTimer = new Timer(50, this); 
+        gameTimer = new Timer(16, this);
+        menuTimer = new Timer(40, e -> { if(currentGameState == GameState.MENU) menuBackgroundPanel.repaint(); });
         gameTimer.stop();
+        menuTimer.stop();
     }
-
-    private void createMazeAndDotsForLevel(int level) {
-        dots.clear();
-        obstacles.clear();
-
-        int[][] mazeData;
-        
-        // Définition des motifs de labyrinthe
-        if (level % 3 == 1) { 
-            mazeData = new int[][]{
-                    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}, 
-                    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1}, 
-                    {1,2,1,1,1,2,1,2,1,2,1,2,1,2,1,2,1,1,2,1}, 
-                    {1,2,1,2,2,2,1,2,1,2,1,2,1,2,1,2,1,2,2,1}, 
-                    {1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,1,2,1}, 
-                    {1,2,2,2,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1}, 
-                    {1,1,1,2,1,1,1,2,1,1,1,2,1,1,1,2,1,1,1,1}, 
-                    {1,2,2,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,2,1}, 
-                    {1,2,1,1,1,2,1,2,1,1,1,2,1,2,1,1,1,2,1,1}, 
-                    {1,2,1,2,1,2,2,2,2,2,1,2,2,2,1,2,1,2,2,1}, 
-                    {1,2,1,2,1,1,1,1,1,2,1,2,1,2,1,1,1,1,2,1}, 
-                    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1}, 
-                    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}, 
-                    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1}, 
-                    {1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,1}, 
-                    {1,2,1,2,2,2,1,2,1,2,1,2,1,2,1,2,1,2,2,1}, 
-                    {1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,1,2,1}, 
-                    {1,2,2,2,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1}, 
-                    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}  
-            };
-        } else if (level % 3 == 2) {
-            mazeData = new int[][]{
-                    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}, 
-                    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1}, 
-                    {1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,1,2,1,2,1}, 
-                    {1,2,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,2,1}, 
-                    {1,2,1,2,1,1,1,1,1,1,1,1,1,1,1,1,2,1,2,1}, 
-                    {1,2,2,2,1,2,2,2,2,2,2,2,2,2,2,1,2,2,2,1}, 
-                    {1,1,1,2,1,2,1,1,1,1,1,1,1,1,2,1,2,1,1,1}, 
-                    {1,2,2,2,2,2,1,2,2,2,2,2,2,1,2,2,2,2,2,1}, 
-                    {1,2,1,1,1,1,1,2,1,1,1,1,2,1,1,1,1,1,2,1}, 
-                    {1,2,2,2,2,2,1,2,2,2,2,1,2,1,2,2,2,2,2,1}, 
-                    {1,2,1,1,1,1,1,2,1,1,1,1,2,1,1,1,1,1,2,1}, 
-                    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1}, 
-                    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}, 
-                    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1}, 
-                    {1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,1,2,1,2,1}, 
-                    {1,2,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,2,1}, 
-                    {1,2,1,2,1,1,1,1,1,1,1,1,1,1,1,1,2,1,2,1}, 
-                    {1,2,2,2,1,2,2,2,2,2,2,2,2,2,2,1,2,2,2,1}, 
-                    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}  
-            };
-        } else { // Level 3, 6, 9...
-            mazeData = new int[][]{
-                    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}, 
-                    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1}, 
-                    {1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,1}, 
-                    {1,2,1,2,2,2,1,2,1,2,1,2,1,2,1,2,1,2,2,1}, 
-                    {1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,1,2,1}, 
-                    {1,2,2,2,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1}, 
-                    {1,1,1,2,1,1,1,2,1,1,1,2,1,1,1,2,1,1,1,1}, 
-                    {1,2,2,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,2,1}, 
-                    {1,2,1,1,1,2,1,2,1,1,1,2,1,2,1,1,1,2,1,1}, 
-                    {1,2,1,2,1,2,2,2,2,2,1,2,2,2,1,2,1,2,2,1}, 
-                    {1,2,1,2,1,1,1,1,1,2,1,2,1,2,1,1,1,1,2,1}, 
-                    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1}, 
-                    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}, 
-                    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1}, 
-                    {1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,1}, 
-                    {1,2,1,2,2,2,1,2,1,2,1,2,1,2,1,2,1,2,2,1}, 
-                    {1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,1,2,1}, 
-                    {1,2,2,2,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1}, 
-                    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}  
-            };
-        }
-        
-        // --- Common Maze Modifications (déplacé en dehors des blocs if/else pour minimiser les lignes) ---
-        // Ouvre la zone autour de (8,10) pour tous les niveaux
-        mazeData[8][10] = 2; mazeData[9][10] = 2; mazeData[8][9] = 2; mazeData[8][11] = 2;
-        
-        // Ouvre une voie vers le labyrinthe du bas (Row 12, Cols 9 et 10) pour TOUS les niveaux
-        mazeData[12][9] = 2;
-        mazeData[12][10] = 2;
-
-        // Ouvre passage à (14,16), (14,17), (14,18) pour l'accessibilité à droite pour TOUS les niveaux
-        mazeData[14][16] = 2;
-        mazeData[14][17] = 2;
-        mazeData[14][18] = 2;
-
-        // Ouvre des voies multiples autour de (16,17) (assumé "mur en forme de 6") pour TOUS les niveaux
-        mazeData[16][17] = 2; 
-        mazeData[15][17] = 2; 
-        mazeData[17][17] = 2; 
-        mazeData[16][16] = 2; 
-        mazeData[16][18] = 2; 
-        // --- Fin des modifications communes ---
-
-        gridCols = mazeData[0].length;
-        gridRows = mazeData.length;
-
-        // Populate obstacles and dots lists
-        for (int row = 0; row < gridRows; row++) {
-            for (int col = 0; col < gridCols; col++) {
-                Point p = new Point(col, row); 
-                if (mazeData[row][col] == 1) {
-                    obstacles.add(p);
-                } else if (mazeData[row][col] == 2) {
-                    dots.add(p);
-                }
-            }
-        }
-    }
-
-    private void placeEnemies() {
-        enemies.clear();
-        int numEnemies = 4; // Toujours 4 ennemis
-
-        List<Point> availablePositions = new ArrayList<>();
-        for (int r = 0; r < gridRows; r++) {
-            for (int c = 0; c < gridCols; c++) {
-                Point p = new Point(c, r);
-                // La position ne doit pas être un obstacle ou la position du joueur.
-                // Les ennemis peuvent désormais apparaître sur les points.
-                if (!obstacles.contains(p) && !p.equals(playerPosition)) {
-                    availablePositions.add(p);
-                }
-            }
-        }
-        
-        Collections.shuffle(availablePositions, random); 
-
-        for (int i = 0; i < numEnemies && i < availablePositions.size(); i++) {
-            enemies.add(availablePositions.get(i));
-        }
-
-        // --- DEBUGGING OUTPUT ---
-        System.out.println("DEBUG: Niveau " + currentLevel + " - Ennemis demandés: " + numEnemies);
-        System.out.println("DEBUG: Positions disponibles pour ennemis (non murs/joueur): " + availablePositions.size());
-        System.out.println("DEBUG: Ennemis finalement placés:");
-        if (enemies.isEmpty()) {
-            System.out.println("  AUCUN (Labyrinthe trop dense ou pas assez de places valides trouvées)");
-        }
-        for (Point enemy : enemies) {
-            System.out.println("  Ennemi à: (" + enemy.x + ", " + enemy.y + ")");
-        }
-        // --- END DEBUGGING ---
-    }
-
-    private void showMenu() {
-        currentGameState = GameState.MENU;
-        setPanelVisibility(menuPanel, true);
-        setPanelVisibility(pausePanel, false);
-        setPanelVisibility(endScreenPanel, false);
-        setPanelVisibility(highScoresPanel, false);
-        gamePanel.setVisible(false);
-        gameTimer.stop();
-        this.requestFocusInWindow();
-    }
-
-    private void setPanelVisibility(JPanel panel, boolean visible) {
-        panel.setVisible(visible);
-    }
-
-    private void chooseStartingLevel() {
-        String levelInput = JOptionPane.showInputDialog(this, "Entrez le niveau de départ (1 à " + maxLevel + ") :", "Choisir Niveau", JOptionPane.PLAIN_MESSAGE); 
-        if (levelInput != null && !levelInput.trim().isEmpty()) {
-            try {
-                int chosenLevel = Integer.parseInt(levelInput.trim());
-                if (chosenLevel >= 1 && chosenLevel <= maxLevel) { 
-                    currentLevel = chosenLevel;
-                    // maxLevel est déjà initialisé à 20
-                    startGame();
-                } else { 
-                    JOptionPane.showMessageDialog(this, "Le niveau doit être compris entre 1 et " + maxLevel + ".", "Erreur", JOptionPane.ERROR_MESSAGE);
-                    this.requestFocusInWindow(); 
-                }
-            } catch (NumberFormatException ex) {
-                JOptionPane.showMessageDialog(this, "Entrée invalide. Veuillez entrer un nombre.", "Erreur", JOptionPane.ERROR_MESSAGE);
-                this.requestFocusInWindow(); 
-            }
-        }
-        this.requestFocusInWindow();
-    }
-
+    
+    /**
+     * EN: Starts the game, hiding the menu and showing the game panel.
+     * FR: Démarre le jeu, en masquant le menu et en affichant le panneau de jeu.
+     */
     private void startGame() {
-        setPanelVisibility(menuPanel, false);
+        setMenuUIVisible(false);
         currentGameState = GameState.PLAYING;
-        score = 0; 
-        initGameElementsForLevel(currentLevel); 
+        score = 0;
+        initGameElementsForLevel(currentLevel);
         gamePanel.setVisible(true);
         gameTimer.start();
         this.requestFocusInWindow();
     }
-
+    
+    /**
+     * EN: Initializes game elements for a specific level.
+     * FR: Initialise les éléments de jeu pour un niveau spécifique.
+     * @param level The level to initialize.
+     */
     private void initGameElementsForLevel(int level) {
-        playerPosition = new Point(1, 1); 
+        playerPosition = new Point(1, 1);
         createMazeAndDotsForLevel(level);
-        initialDotCount = dots.size(); 
-        targetScore = 500 + (currentLevel - 1) * 250; 
-        if (targetScore > initialDotCount * 10) {
-            targetScore = initialDotCount * 10;
-        }
-
-        placeEnemies(); 
+        targetScore = dots.size() * 10;
         
-        // Adapte la vitesse des ennemis par niveau
-        int newDelay = Math.max(50, 400 - (level - 1) * 10);
+        placeEnemies();
+        placePowerUps();
+
+        int newDelay = Math.max(16, 120 - (level - 1) * 5);
         gameTimer.setDelay(newDelay);
-
-        gamePanel.repaint(); 
+        gamePanel.repaint();
     }
 
-    private void showInstructions() {
-        JOptionPane.showMessageDialog(this,
-                "Instructions du Jeu:\n" +
-                        "- Utilisez les flèches directionnelles (HAUT, BAS, GAUCHE, DROITE) pour déplacer le carré jaune.\n" +
-                        "- Mangez tous les petits cercles blancs pour gagner le niveau.\n" +
-                        "- Évitez les murs (carrés bleus).\n" +
-                        "- Les carrés rouges sont des ennemis ! Ils vous pourchassent ! Si un ennemi vous touche, c'est GAME OVER !\n" +
-                        "- Appuyez sur 'P' pour mettre le jeu en pause.\n" +
-                        "- Atteignez votre niveau final choisi pour gagner la partie !",
-                "Instructions", JOptionPane.INFORMATION_MESSAGE);
-        this.requestFocusInWindow();
+    /**
+     * EN: Creates the maze, dots, and obstacles for a given level.
+     * FR: Crée le labyrinthe, les points et les obstacles pour un niveau donné.
+     * @param level The current level, affecting the density of obstacles.
+     */
+    private void createMazeAndDotsForLevel(int level) {
+        dots.clear(); obstacles.clear();
+        for (int i = 0; i < gridCols; i++) {
+            for (int j = 0; j < gridRows; j++) {
+                if (i == 0 || j == 0 || i == gridCols - 1 || j == gridRows - 1) obstacles.add(new Point(i, j));
+                else if (random.nextInt(100) < 20 + (level % 5)) obstacles.add(new Point(i, j));
+                else dots.add(new Point(i, j));
+            }
+        }
+        obstacles.remove(new Point(1, 1));
+        dots.remove(new Point(1, 1));
+    }
+    
+    /**
+     * EN: Places enemies on the grid at random available positions.
+     * FR: Place les ennemis sur la grille à des positions disponibles aléatoires.
+     */
+    private void placeEnemies() {
+        enemies.clear();
+        List<Point> availablePositions = getAvailablePositions();
+        availablePositions.removeIf(p -> p.distance(playerPosition) < 5);
+        Collections.shuffle(availablePositions, random);
+        
+        int spawnDelay = 500;
+        int enemyCount = Math.min(4, availablePositions.size());
+        for(int i = 0; i < enemyCount; i++) {
+            final int index = i;
+            if (availablePositions.isEmpty()) break;
+            Point spawnPoint = availablePositions.remove(0);
+            Timer spawnTimer = new Timer(spawnDelay * (i + 1), (e) -> {
+                EnemyBehavior behavior = EnemyBehavior.values()[index % EnemyBehavior.values().length];
+                enemies.add(new Enemy(spawnPoint, behavior));
+                ((Timer)e.getSource()).stop();
+            });
+            spawnTimer.setRepeats(false);
+            spawnTimer.start();
+        }
     }
 
-    private void showCredits() {
-        JOptionPane.showMessageDialog(this,
-                "Crédits:\n" +
-                        "- Conception et développement: Samyn-Antoy ABASS (RTN)\n" +
-                        "- Inspiré par des jeux de labyrinthe classiques.",
-                "Crédits", JOptionPane.INFORMATION_MESSAGE);
-        this.requestFocusInWindow();
+    /**
+     * EN: Places power-ups on the grid at random available positions.
+     * FR: Place les power-ups sur la grille à des positions disponibles aléatoires.
+     */
+    private void placePowerUps() {
+        powerUps.clear();
+        List<Point> availablePositions = getAvailablePositions();
+        Collections.shuffle(availablePositions, random);
+        if(availablePositions.size() > 0) powerUps.add(new PowerUp(availablePositions.remove(0), PowerUpType.SUPER_PELLET));
+        if(currentLevel % 2 == 0 && availablePositions.size() > 0) powerUps.add(new PowerUp(availablePositions.remove(0), PowerUpType.FREEZE));
+        if(random.nextInt(100) < 40 && availablePositions.size() > 0) powerUps.add(new PowerUp(availablePositions.remove(0), PowerUpType.SHIELD));
+    }
+    
+    /**
+     * EN: Gets a list of all available (non-obstacle, non-player) positions on the grid.
+     * FR: Obtient une liste de toutes les positions disponibles (non-obstacle, non-joueur) sur la grille.
+     * @return A list of available points.
+     */
+    private List<Point> getAvailablePositions() {
+        List<Point> available = new ArrayList<>();
+        for (int r = 1; r < gridRows - 1; r++) {
+            for (int c = 1; c < gridCols - 1; c++) {
+                Point p = new Point(c, r);
+                if (!obstacles.contains(p) && !p.equals(playerPosition)) available.add(p);
+            }
+        }
+        return available;
     }
 
-    private void pauseGame() {
-        currentGameState = GameState.PAUSED;
-        gameTimer.stop();
-        setPanelVisibility(pausePanel, true);
-        layeredPane.repaint();
-    }
 
-    private void resumeGame() {
-        currentGameState = GameState.PLAYING;
-        setPanelVisibility(pausePanel, false);
-        gameTimer.start();
-        this.requestFocusInWindow();
+    /**
+     * EN: Updates the game logic, such as power-up timers and enemy states.
+     * FR: Met à jour la logique du jeu, comme les minuteurs de power-up et les états des ennemis.
+     */
+    private void updateGameLogic() {
+        long currentTime = System.currentTimeMillis();
+        if (isShieldActive && currentTime > shieldEndTime) isShieldActive = false;
+        if (areEnemiesFrozen && currentTime > freezeEndTime) areEnemiesFrozen = false;
+        if (areEnemiesVulnerable && currentTime > vulnerableEndTime) {
+            areEnemiesVulnerable = false;
+            for(Enemy e : enemies) e.changeState(EnemyState.PATROLLING);
+        }
+        
+        for (Enemy enemy : enemies) {
+            if(enemy.state == EnemyState.AGGRO_TELEGRAPH && currentTime - enemy.stateChangeTime > 300) {
+                enemy.changeState(EnemyState.CHASING);
+            }
+        }
     }
-
-    private void hidePauseScreen() {
-        setPanelVisibility(pausePanel, false);
-    }
-
+    
+    /**
+     * EN: Handles the game over sequence.
+     * FR: Gère la séquence de fin de partie.
+     */
     private void gameOver() {
         if (currentGameState == GameState.PLAYING) {
-            currentGameState = GameState.GAME_OVER;
+            currentGameState = GameState.GAME_OVER; 
             gameTimer.stop();
-            endMessageLabel.setText("GAME OVER ! Votre score final: " + score);
-            setPanelVisibility(endScreenPanel, true);
+            endMessageLabel.setText("RAPPORT DE FIN DE MISSION");
+            endMessageLabel.setForeground(new Color(255, 80, 80));
+            endScreenPanel.setVisible(true);
             layeredPane.repaint();
-            askForNameAndAddHighScore(score); 
+            askForNameAndAddHighScore(score);
             this.requestFocusInWindow();
         }
     }
 
+    /**
+     * EN: Handles the level completion sequence.
+     * FR: Gère la séquence de fin de niveau.
+     */
     private void gameWinLevel() {
-        gameTimer.stop(); 
-        currentLevel++; 
+        gameTimer.stop();
+        currentLevel++;
+        if(currentLevel > unlockedLevel) unlockedLevel = currentLevel;
+        playerProfile.levelsCompleted++;
+        score += 1000;
+        
         if (currentLevel > maxLevel) {
-            currentLevel = 1; 
-            score = 0; 
-            JOptionPane.showMessageDialog(this, "Félicitations ! Vous avez terminé le cycle de " + maxLevel + " niveaux ! Recommencez au Niveau 1 !", "Cycle de Niveaux Complété", JOptionPane.INFORMATION_MESSAGE);
-            initGameElementsForLevel(currentLevel); 
-            gameTimer.start(); 
-            this.requestFocusInWindow(); 
+            currentGameState = GameState.WIN;
+            endMessageLabel.setText("SYSTÈME PÉNETRÉ");
+            endMessageLabel.setForeground(Color.GREEN);
+            endScreenPanel.setVisible(true);
+            askForNameAndAddHighScore(score);
         } else {
-            JOptionPane.showMessageDialog(this, "Niveau " + (currentLevel - 1) + " terminé ! Préparez-vous pour le niveau " + currentLevel + " !", "Niveau Terminé", JOptionPane.INFORMATION_MESSAGE);
-            initGameElementsForLevel(currentLevel); 
-            gameTimer.start(); 
-            this.requestFocusInWindow(); 
+            JOptionPane.showMessageDialog(this, "Niveau " + (currentLevel - 1) + " terminé ! Préparez-vous pour le niveau " + currentLevel + " !");
+            initGameElementsForLevel(currentLevel);
+            gameTimer.start();
         }
+        this.requestFocusInWindow();
     }
-
-    private void hideEndScreen() {
-        setPanelVisibility(endScreenPanel, false);
+    
+    /**
+     * EN: Shows the main menu.
+     * FR: Affiche le menu principal.
+     */
+    private void showMenu() {
+        currentGameState = GameState.MENU;
+        setMenuUIVisible(true);
+        highScoresPanel.setVisible(false);
+        endScreenPanel.setVisible(false);
+        gamePanel.setVisible(false);
+        gameTimer.stop();
+        menuTimer.start();
+        menuCardLayout.show(menuContainerPanel, "MAIN");
+        this.requestFocusInWindow();
     }
-
-    private void restartGame() {
-        showMenu();
+    
+    /**
+     * EN: Sets the visibility of the menu UI components.
+     * FR: Définit la visibilité des composants de l'interface utilisateur du menu.
+     * @param visible True to show the menu, false to hide it.
+     */
+    private void setMenuUIVisible(boolean visible) {
+        menuBackgroundPanel.setVisible(visible);
+        menuContainerPanel.setVisible(visible);
+        if(visible) menuTimer.start(); else menuTimer.stop();
     }
-
+    
+    /**
+     * EN: Hides the end screen panel.
+     * FR: Masque le panneau de l'écran de fin.
+     */
+    private void hideEndScreen() { endScreenPanel.setVisible(false); }
+    
+    /**
+     * EN: Restarts the game by showing the main menu.
+     * FR: Redémarre le jeu en affichant le menu principal.
+     */
+    private void restartGame() { showMenu(); }
+    
     @Override
-    public void paint(Graphics g) {
-        super.paint(g);
-    }
-
+    public void paint(Graphics g) { super.paint(g); }
+    
+    /**
+     * EN: The main game panel where the game is rendered.
+     * FR: Le panneau de jeu principal où le jeu est rendu.
+     */
     private class GamePanel extends JPanel {
-        public GamePanel() {
-            setOpaque(true);
-            setBackground(Color.BLACK);
-            setDoubleBuffered(true);
-        }
+        private final Font uiFont = new Font("Orbitron", Font.BOLD, 22);
+        public GamePanel() { setOpaque(true); setDoubleBuffered(true); }
 
         @Override
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
+            setBackground(currentTheme.bgColor);
+
+            Graphics2D g2d = (Graphics2D) g;
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
             if (currentGameState == GameState.PLAYING || currentGameState == GameState.PAUSED) {
-                g.setColor(Color.DARK_GRAY); 
                 for (Point obstacle : obstacles) {
-                    g.fillRect(obstacle.x * CELL_SIZE, obstacle.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                    int x = obstacle.x * CELL_SIZE; int y = obstacle.y * CELL_SIZE;
+                    g2d.setColor(currentTheme.wallGlow);
+                    g2d.fillRect(x - 2, y - 2, CELL_SIZE + 4, CELL_SIZE + 4);
+                    g2d.setColor(currentTheme.wallColor);
+                    g2d.fillRect(x, y, CELL_SIZE, CELL_SIZE);
                 }
 
-                g.setColor(Color.WHITE);
-                for (Point dot : dots) {
-                    g.fillOval(dot.x * CELL_SIZE + CELL_SIZE / 4, dot.y * CELL_SIZE + CELL_SIZE / 4, CELL_SIZE / 2, CELL_SIZE / 2);
+                g2d.setColor(new Color(0, 255, 128));
+                for (Point dot : dots) g2d.fill(new Ellipse2D.Double(dot.x * CELL_SIZE + CELL_SIZE * 0.4, dot.y * CELL_SIZE + CELL_SIZE * 0.4, CELL_SIZE * 0.2, CELL_SIZE * 0.2));
+                for (PowerUp p : powerUps) drawPowerUp(g2d, p);
+
+                int playerX = playerPosition.x * CELL_SIZE; int playerY = playerPosition.y * CELL_SIZE;
+                g2d.setColor(Color.YELLOW);
+                g2d.fill(new Ellipse2D.Double(playerX + 2, playerY + 2, CELL_SIZE - 4, CELL_SIZE - 4));
+                g2d.setColor(Color.WHITE);
+                g2d.fill(new Ellipse2D.Double(playerX + 8, playerY + 8, CELL_SIZE - 16, CELL_SIZE - 16));
+                
+                if(isShieldActive) {
+                    g2d.setColor(new Color(0, 255, 255, 100));
+                    g2d.setStroke(new BasicStroke(3));
+                    g2d.draw(new Ellipse2D.Double(playerX - 2, playerY - 2, CELL_SIZE + 4, CELL_SIZE + 4));
                 }
 
-                g.setColor(Color.YELLOW);
-                g.fillRect(playerPosition.x * CELL_SIZE, playerPosition.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                for (Enemy enemy : enemies) drawEnemy(g2d, enemy);
 
-                g.setColor(new Color(180, 0, 0)); 
-                for (Point enemy : enemies) {
-                    g.fillRect(enemy.x * CELL_SIZE, enemy.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-                }
+                g2d.setFont(uiFont);
+                g2d.setColor(currentTheme.accentColor);
+                g2d.drawString("Score: " + score, 15, 25);
+                g2d.drawString("Niveau: " + currentLevel, WIDTH / 2 - 50, 25);
+            }
+        }
+        
+        /**
+         * EN: Draws a power-up on the screen.
+         * FR: Dessine un power-up à l'écran.
+         * @param g2d The Graphics2D context.
+         * @param powerUp The power-up to draw.
+         */
+        private void drawPowerUp(Graphics2D g2d, PowerUp powerUp) {
+            int x = powerUp.position.x * CELL_SIZE; int y = powerUp.position.y * CELL_SIZE;
+            float pulse = (float) (Math.sin((System.currentTimeMillis() - powerUp.spawnTime) / 200.0) + 1.0) / 2.0f;
+            switch(powerUp.type) {
+                case SUPER_PELLET: g2d.setColor(new Color(255, 255, 0, (int)(155 + 100 * pulse))); g2d.fill(new Ellipse2D.Double(x + CELL_SIZE*0.2, y + CELL_SIZE*0.2, CELL_SIZE*0.6, CELL_SIZE*0.6)); break;
+                case FREEZE: g2d.setColor(new Color(0, 150, 255, (int)(155 + 100 * pulse))); g2d.fill(new Rectangle2D.Double(x + CELL_SIZE*0.25, y + CELL_SIZE*0.25, CELL_SIZE*0.5, CELL_SIZE*0.5)); g2d.setColor(Color.WHITE); g2d.draw(new Rectangle2D.Double(x + CELL_SIZE*0.25, y + CELL_SIZE*0.25, CELL_SIZE*0.5, CELL_SIZE*0.5)); break;
+                case SHIELD: g2d.setColor(new Color(0, 255, 0, (int)(155 + 100 * pulse))); g2d.setStroke(new BasicStroke(3)); g2d.draw(new Ellipse2D.Double(x + CELL_SIZE*0.2, y + CELL_SIZE*0.2, CELL_SIZE*0.6, CELL_SIZE*0.6)); break;
+            }
+        }
+        
+        /**
+         * EN: Draws an enemy on the screen.
+         * FR: Dessine un ennemi à l'écran.
+         * @param g2d The Graphics2D context.
+         * @param enemy The enemy to draw.
+         */
+        private void drawEnemy(Graphics2D g2d, Enemy enemy) {
+            int ex = enemy.position.x * CELL_SIZE; int ey = enemy.position.y * CELL_SIZE;
+            Color bodyColor;
 
-                g.setColor(Color.WHITE);
-                g.setFont(new Font("Arial", Font.BOLD, 18)); 
-                g.drawString("Score: " + score, 10, 20);
-                g.drawString("Niveau: " + currentLevel + " / " + maxLevel, WIDTH - 180, 20); 
-                g.drawString("Cible: " + targetScore, WIDTH - 80, 20); 
+            switch(enemy.state) {
+                case FLEEING: bodyColor = new Color(0, 100, 255, 150); break;
+                case AGGRO_TELEGRAPH:
+                    bodyColor = (System.currentTimeMillis() / 100) % 2 == 0 ? Color.WHITE : getEnemyBaseColor(enemy.behavior);
+                    break;
+                case CHASING:
+                    bodyColor = getEnemyBaseColor(enemy.behavior).brighter();
+                    g2d.setColor(new Color(255, 0, 0, 100));
+                    g2d.fill(new Ellipse2D.Double(ex, ey, CELL_SIZE, CELL_SIZE));
+                    break;
+                case PATROLLING: default:
+                    bodyColor = getEnemyBaseColor(enemy.behavior);
+                    break;
+            }
+            
+            g2d.setColor(bodyColor);
+            g2d.fill(new Rectangle2D.Double(ex + 4, ey + 4, CELL_SIZE - 8, CELL_SIZE - 8));
+        }
+        
+        /**
+         * EN: Gets the base color for an enemy based on its behavior.
+         * FR: Obtient la couleur de base d'un ennemi en fonction de son comportement.
+         * @param behavior The enemy's behavior.
+         * @return The base color of the enemy.
+         */
+        private Color getEnemyBaseColor(EnemyBehavior behavior) {
+            switch(behavior) {
+                case HUNTER: return new Color(255, 0, 0);
+                case AMBUSHER: return new Color(255, 105, 180);
+                case FLANKER: return new Color(255, 165, 0);
+                case ROAMER: default: return new Color(128, 0, 128);
             }
         }
     }
@@ -555,64 +837,161 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
     public void keyPressed(KeyEvent e) {
         if (currentGameState == GameState.PLAYING) {
             Point newPlayerPos = (Point) playerPosition.clone();
-
             switch (e.getKeyCode()) {
                 case KeyEvent.VK_UP: newPlayerPos.y--; break;
                 case KeyEvent.VK_DOWN: newPlayerPos.y++; break;
                 case KeyEvent.VK_LEFT: newPlayerPos.x--; break;
                 case KeyEvent.VK_RIGHT: newPlayerPos.x++; break;
-                case KeyEvent.VK_P: pauseGame(); return;
+                default: return;
             }
-
             if (isWalkable(newPlayerPos)) {
                 playerPosition.setLocation(newPlayerPos);
-
-                dots.removeIf(dot -> dot.equals(playerPosition));
-                score += 10;
-                
-                checkEnemyCollision(); 
-                checkWinCondition(); 
+                if (dots.removeIf(dot -> dot.equals(playerPosition))) score += 10;
+                powerUps.removeIf(p -> {
+                    if (p.position.equals(playerPosition)) { activatePowerUp(p.type); return true; }
+                    return false;
+                });
             }
-        } else if (e.getKeyCode() == KeyEvent.VK_P && currentGameState == GameState.PAUSED) {
-            resumeGame();
+        }
+    }
+    
+    /**
+     * EN: Activates a power-up when the player collects it.
+     * FR: Active un power-up lorsque le joueur le récupère.
+     * @param type The type of power-up to activate.
+     */
+    private void activatePowerUp(PowerUpType type) {
+        long currentTime = System.currentTimeMillis();
+        playerProfile.powerupsCollected++;
+        switch(type) {
+            case SHIELD: isShieldActive = true; shieldEndTime = currentTime + 5000; break;
+            case FREEZE: areEnemiesFrozen = true; freezeEndTime = currentTime + 3000; break;
+            case SUPER_PELLET:
+                areEnemiesVulnerable = true;
+                vulnerableEndTime = currentTime + 8000;
+                for(Enemy e : enemies) e.changeState(EnemyState.FLEEING);
+                score += 50;
+                break;
         }
     }
 
+    /**
+     * EN: Checks if a given point on the grid is walkable.
+     * FR: Vérifie si un point donné sur la grille est praticable.
+     * @param p The point to check.
+     * @return True if the point is walkable, false otherwise.
+     */
     private boolean isWalkable(Point p) {
         return p.x >= 0 && p.y >= 0 && p.x < gridCols && p.y < gridRows && !obstacles.contains(p);
     }
-
-    @Override
-    public void keyTyped(KeyEvent e) { /* Not used */ }
-
-    @Override
-    public void keyReleased(KeyEvent e) { /* Not used */ }
-
+    
     @Override
     public void actionPerformed(ActionEvent e) {
         if (currentGameState == GameState.PLAYING) {
-            moveEnemies();
-            checkEnemyCollision(); 
-            checkWinCondition(); 
-            
-            if (currentGameState == GameState.PLAYING) {
-                gamePanel.repaint();
-            }
+            updateGameLogic();
+            if(!areEnemiesFrozen) moveEnemies();
+            checkEnemyCollision(); checkWinCondition();
+            gamePanel.repaint();
         }
     }
 
+    /**
+     * EN: Checks if the win condition (all dots collected) has been met.
+     * FR: Vérifie si la condition de victoire (tous les points collectés) est remplie.
+     */
     private void checkWinCondition() {
-        if (currentGameState == GameState.PLAYING) {
-            if (score >= targetScore) {
-                gameWinLevel();
+        if (currentGameState == GameState.PLAYING && dots.isEmpty()) gameWinLevel();
+    }
+    
+    /**
+     * EN: Moves the enemies based on their behavior and state.
+     * FR: Déplace les ennemis en fonction de leur comportement et de leur état.
+     */
+    private void moveEnemies() {
+        for (Enemy enemy : enemies) {
+            discoveredEnemies.add(enemy.behavior);
+            
+            if(enemy.state == EnemyState.PATROLLING && enemy.position.distance(playerPosition) < 6) {
+                enemy.changeState(EnemyState.AGGRO_TELEGRAPH);
+            } else if (enemy.state == EnemyState.CHASING && enemy.position.distance(playerPosition) > 10) {
+                 enemy.changeState(EnemyState.PATROLLING);
+            }
+            
+            if(enemy.state == EnemyState.FLEEING) {
+                moveEnemyAway(enemy);
+            } else if (enemy.state == EnemyState.CHASING) {
+                enemy.pathRecalculationCounter++;
+                boolean shouldRecalculate = true;
+                if(currentLevel < 5) {
+                    if(enemy.pathRecalculationCounter % (random.nextInt(3)+1) != 0) {
+                        shouldRecalculate = false;
+                    }
+                }
+                if(shouldRecalculate) {
+                    Point target = getTargetForEnemy(enemy);
+                    List<Point> path = findPath(enemy.position, target);
+                    if (path != null && path.size() > 1) enemy.position.setLocation(path.get(1));
+                }
             }
         }
     }
+    
+    /**
+     * EN: Moves an enemy away from the player (when fleeing).
+     * FR: Éloigne un ennemi du joueur (lorsqu'il fuit).
+     * @param enemy The enemy to move.
+     */
+    private void moveEnemyAway(Enemy enemy) {
+        int bestDist = -1;
+        Point bestMove = enemy.position;
+        int[] dx = {0, 0, 1, -1, 0}; int[] dy = {1, -1, 0, 0, 0};
+        
+        for (int i = 0; i < 5; i++) {
+            Point next = new Point(enemy.position.x + dx[i], enemy.position.y + dy[i]);
+            if(isWalkable(next)) {
+                double dist = next.distanceSq(playerPosition);
+                if(dist > bestDist) {
+                    bestDist = (int) dist;
+                    bestMove = next;
+                }
+            }
+        }
+        enemy.position.setLocation(bestMove);
+    }
 
+    /**
+     * EN: Determines the target position for an enemy based on its behavior.
+     * FR: Détermine la position cible d'un ennemi en fonction de son comportement.
+     * @param enemy The enemy to determine the target for.
+     * @return The target point.
+     */
+    private Point getTargetForEnemy(Enemy enemy) {
+        switch(enemy.behavior) {
+            case HUNTER: return playerPosition;
+            case AMBUSHER: return new Point(playerPosition.x + random.nextInt(5)-2, playerPosition.y + random.nextInt(5)-2);
+            case ROAMER:
+                if(enemy.position.distance(playerPosition) > 8) return playerPosition;
+                else return new Point(1,1);
+            case FLANKER:
+                 if(enemies.size() > 0) {
+                     Point hunterPos = enemies.get(0).position;
+                     return new Point(hunterPos.x + (hunterPos.x - playerPosition.x), hunterPos.y + (hunterPos.y - playerPosition.y));
+                 }
+                 return playerPosition;
+            default: return playerPosition;
+        }
+    }
+
+    /**
+     * EN: Finds a path from a start point to a target point using Breadth-First Search (BFS).
+     * FR: Trouve un chemin d'un point de départ à un point cible en utilisant une recherche en largeur (BFS).
+     * @param start The starting point.
+     * @param target The target point.
+     * @return A list of points representing the path, or null if no path is found.
+     */
     private List<Point> findPath(Point start, Point target) {
         Queue<List<Point>> queue = new LinkedList<>();
         Set<Point> visited = new HashSet<>();
-        
         List<Point> initialPath = new ArrayList<>();
         initialPath.add(start);
         queue.add(initialPath);
@@ -621,17 +1000,11 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
         while (!queue.isEmpty()) {
             List<Point> currentPath = queue.poll();
             Point current = currentPath.get(currentPath.size() - 1);
+            if (current.equals(target)) return currentPath;
 
-            if (current.equals(target)) {
-                return currentPath;
-            }
-
-            int[] dx = {0, 0, 1, -1};
-            int[] dy = {1, -1, 0, 0};
-
+            int[] dx = {0, 0, 1, -1}; int[] dy = {1, -1, 0, 0};
             for (int i = 0; i < 4; i++) {
                 Point next = new Point(current.x + dx[i], current.y + dy[i]);
-
                 if (isWalkable(next) && !visited.contains(next)) {
                     visited.add(next);
                     List<Point> newPath = new ArrayList<>(currentPath);
@@ -643,140 +1016,216 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
         return null;
     }
 
-    private void moveEnemies() {
-        for (int i = 0; i < enemies.size(); i++) {
-            Point currentEnemyPos = enemies.get(i);
-            
-            List<Point> path = findPath(currentEnemyPos, playerPosition);
-
-            if (path != null && path.size() > 1) {
-                enemies.get(i).setLocation(path.get(1));
-            } else {
-                List<Point> possibleMoves = new ArrayList<>();
-                int[] dx = {0, 0, 1, -1};
-                int[] dy = {1, -1, 0, 0};
-
-                for (int j = 0; j < 4; j++) {
-                    Point next = new Point(currentEnemyPos.x + dx[j], currentEnemyPos.y + dy[j]);
-                    if (isWalkable(next)) {
-                        possibleMoves.add(next);
-                    }
-                }
-                if (!possibleMoves.isEmpty()) {
-                    enemies.get(i).setLocation(possibleMoves.get(random.nextInt(possibleMoves.size())));
-                }
-            }
-        }
-    }
-
+    /**
+     * EN: Checks for collisions between the player and enemies.
+     * FR: Vérifie les collisions entre le joueur et les ennemis.
+     */
     private void checkEnemyCollision() {
-        if (currentGameState == GameState.PLAYING) {
-            for (Point enemy : enemies) {
-                if (enemy.equals(playerPosition)) {
-                    gameOver();
-                    return;
+        if (currentGameState != GameState.PLAYING) return;
+        for (Iterator<Enemy> iterator = enemies.iterator(); iterator.hasNext();) {
+            Enemy enemy = iterator.next();
+            if (enemy.position.equals(playerPosition)) {
+                if (enemy.state == EnemyState.FLEEING) {
+                    score += 200;
+                    playerProfile.enemiesDefeated++;
+                    iterator.remove(); 
+                } else if (isShieldActive) {
+                    isShieldActive = false;
+                    enemy.position.setLocation(1, gridRows - 2);
+                } else {
+                    gameOver(); return;
                 }
             }
         }
     }
-
-    // --- HIGH SCORE MANAGEMENT ---
-
+    
+    /**
+     * EN: Represents a high score entry, with a name and a score.
+     * FR: Représente une entrée de meilleur score, avec un nom et un score.
+     */
     private static class HighScoreEntry implements Serializable, Comparable<HighScoreEntry> {
-        private static final long serialVersionUID = 1L;
-        String name;
-        int score;
-
-        public HighScoreEntry(String name, int score) {
-            this.name = name;
-            this.score = score;
-        }
-
-        @Override
-        public String toString() {
-            return String.format("%s: %d", name, score);
-        }
-
-        @Override
-    public int compareTo(HighScoreEntry other) {
-            return Integer.compare(other.score, this.score); 
-        }
+        private static final long serialVersionUID = 2L; String name; int score;
+        public HighScoreEntry(String name, int score) { this.name = name; this.score = score; }
+        @Override public String toString() { return String.format("%-15s %d", name, score); }
+        @Override public int compareTo(HighScoreEntry other) { return Integer.compare(other.score, this.score); }
     }
 
+    /**
+     * EN: Loads high scores from a file.
+     * FR: Charge les meilleurs scores depuis un fichier.
+     */
     @SuppressWarnings("unchecked")
     private void loadHighScores() {
-        highScores.clear();
         File file = new File(HIGHSCORE_FILE);
         if (file.exists()) {
-            try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(file))) {
-                Object obj = ois.readObject();
-                if (obj instanceof List) {
-                    highScores = (List<HighScoreEntry>) obj;
-                    Collections.sort(highScores);
-                    while (highScores.size() > MAX_HIGHSCORES) {
-                        highScores.remove(highScores.size() - 1);
-                    }
-                }
-            } catch (IOException | ClassNotFoundException e) {
-                System.err.println("Error loading high scores: " + e.getMessage());
-            }
+            try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(file))) { highScores = (List<HighScoreEntry>) ois.readObject(); } catch (Exception e) { highScores = new ArrayList<>(); }
         }
     }
 
+    /**
+     * EN: Saves the current high scores to a file.
+     * FR: Sauvegarde les meilleurs scores actuels dans un fichier.
+     */
     private void saveHighScores() {
-        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(HIGHSCORE_FILE))) {
-            oos.writeObject(highScores);
-        } catch (IOException e) {
-            System.err.println("Error saving high scores: " + e.getMessage());
-        }
+        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(HIGHSCORE_FILE))) { oos.writeObject(highScores); } catch (IOException e) { /* Gérer l'erreur */ }
+    }
+    
+    /**
+     * EN: Loads the player's profile from a file.
+     * FR: Charge le profil du joueur depuis un fichier.
+     */
+     private void loadProfile() {
+        File file = new File(PROFILE_FILE);
+        if (file.exists()) {
+            try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(file))) { playerProfile = (PlayerProfile) ois.readObject(); } catch (Exception e) { playerProfile = new PlayerProfile(); }
+        } else { playerProfile = new PlayerProfile(); }
     }
 
+    /**
+     * EN: Saves the current player's profile to a file.
+     * FR: Sauvegarde le profil du joueur actuel dans un fichier.
+     */
+    private void saveProfile() {
+        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(PROFILE_FILE))) { oos.writeObject(playerProfile); } catch (IOException e) { /* Gérer l'erreur */ }
+    }
+    
+    /**
+     * EN: Asks the player for their name and adds their score to the high scores list if applicable.
+     * FR: Demande au joueur son nom et ajoute son score à la liste des meilleurs scores si applicable.
+     * @param finalScore The player's final score.
+     */
     private void askForNameAndAddHighScore(int finalScore) {
-        if (highScores.size() < MAX_HIGHSCORES || (highScores.isEmpty() ? true : finalScore > highScores.get(highScores.size() - 1).score)) {
+        playerProfile.totalScore += finalScore;
+        if (highScores.size() < MAX_HIGHSCORES || highScores.isEmpty() || finalScore > highScores.get(highScores.size() - 1).score) {
             String name = JOptionPane.showInputDialog(this, "Nouveau meilleur score ! Entrez votre nom:", "Meilleur Score", JOptionPane.PLAIN_MESSAGE);
-            if (name != null && !name.trim().isEmpty()) {
-                addHighScore(new HighScoreEntry(name.trim(), finalScore));
-            } else {
-                addHighScore(new HighScoreEntry("Anonyme", finalScore)); 
-            }
-            this.requestFocusInWindow(); 
-        } else {
-            saveHighScores(); 
+            if (name == null || name.trim().isEmpty()) name = "Anonyme";
+            addHighScore(new HighScoreEntry(name.trim(), finalScore));
         }
     }
 
+    /**
+     * EN: Adds a new high score entry to the list, sorts the list, and saves it.
+     * FR: Ajoute une nouvelle entrée de meilleur score à la liste, trie la liste et la sauvegarde.
+     * @param entry The high score entry to add.
+     */
     private void addHighScore(HighScoreEntry entry) {
         highScores.add(entry);
         Collections.sort(highScores);
-        while (highScores.size() > MAX_HIGHSCORES) {
-            highScores.remove(highScores.size() - 1);
-        }
+        while (highScores.size() > MAX_HIGHSCORES) highScores.remove(highScores.size() - 1);
         saveHighScores();
     }
-
+    
+    /**
+     * EN: Displays the high scores screen.
+     * FR: Affiche l'écran des meilleurs scores.
+     */
     private void showHighScores() {
         currentGameState = GameState.HIGHSCORES;
-        setPanelVisibility(menuPanel, false);
-        setPanelVisibility(pausePanel, false);
-        setPanelVisibility(endScreenPanel, false);
-        gamePanel.setVisible(false);
-        setPanelVisibility(highScoresPanel, true);
-
+        setMenuUIVisible(false);
+        highScoresPanel.setVisible(true);
         StringBuilder sb = new StringBuilder();
         if (highScores.isEmpty()) {
-            sb.append("Aucun score enregistré pour le moment.\nJouez pour en ajouter !");
+            sb.append("\n\n   AUCUN SCORE ENREGISTRÉ...");
         } else {
             for (int i = 0; i < highScores.size(); i++) {
-                HighScoreEntry entry = highScores.get(i);
-                sb.append(String.format("%d. %s%n", (i + 1), entry.toString()));
+                 sb.append(String.format(" %d. %s%n", (i + 1), highScores.get(i).toString()));
             }
         }
         highScoresDisplay.setText(sb.toString());
         highScoresDisplay.setCaretPosition(0);
-
         this.requestFocusInWindow();
     }
 
+    @Override public void keyTyped(KeyEvent e) {}
+    @Override public void keyReleased(KeyEvent e) {}
+
+    /**
+     * EN: A custom animated button for the menu.
+     * FR: Un bouton animé personnalisé pour le menu.
+     */
+    private class AnimatedButton extends JButton {
+        private float hoverAnimation = 0f; private Timer animationTimer;
+        public AnimatedButton(String text) { this(text, null); }
+        public AnimatedButton(String text, ActionListener listener) {
+            super(text);
+            if (listener != null) addActionListener(listener);
+            setContentAreaFilled(false); setBorderPainted(false); setFocusPainted(false);
+            setForeground(Color.CYAN); setFont(new Font("Orbitron", Font.BOLD, 24));
+            setCursor(new Cursor(Cursor.HAND_CURSOR));
+            animationTimer = new Timer(15, e -> {
+                if (getModel().isRollover()) hoverAnimation = Math.min(1f, hoverAnimation + 0.1f);
+                else hoverAnimation = Math.max(0f, hoverAnimation - 0.1f);
+                repaint();
+                if (hoverAnimation == 0f || hoverAnimation == 1f) ((Timer)e.getSource()).stop();
+            });
+            addMouseListener(new java.awt.event.MouseAdapter() {
+                public void mouseEntered(java.awt.event.MouseEvent evt) { if (!animationTimer.isRunning()) animationTimer.start(); }
+                public void mouseExited(java.awt.event.MouseEvent evt) { if (!animationTimer.isRunning()) animationTimer.start(); }
+            });
+        }
+        @Override protected void paintComponent(Graphics g) {
+            Graphics2D g2d = (Graphics2D) g.create();
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            if (hoverAnimation > 0) {
+                int glowSize = (int) (10 * hoverAnimation);
+                g2d.setColor(new Color(0, 255, 255, (int) (150 * hoverAnimation)));
+                g2d.fillRoundRect(getWidth() / 2 - (150 + glowSize) / 2, getHeight() / 2 - (25 + glowSize) / 2, 150 + glowSize, 25 + glowSize, 20, 20);
+            }
+            g2d.setColor(Color.CYAN);
+            g2d.drawRoundRect(getWidth()/2 - 150/2, getHeight()/2 - 25/2, 150, 25, 15, 15);
+            super.paintComponent(g);
+            g2d.dispose();
+        }
+        @Override public Dimension getPreferredSize() { return new Dimension(300, 50); }
+        @Override public Dimension getMaximumSize() { return getPreferredSize(); }
+    }
+
+    /**
+     * EN: A panel for displaying an animated background in the menu.
+     * FR: Un panneau pour afficher un arrière-plan animé dans le menu.
+     */
+    private class MenuBackgroundPanel extends JPanel {
+        private class RainDrop { int x, y, speed; } private List<RainDrop> rainDrops;
+        private int tickerX = WIDTH; private String tickerText = "";
+        
+        public MenuBackgroundPanel() {
+            rainDrops = new ArrayList<>();
+            for(int i = 0; i < 100; i++) { RainDrop r = new RainDrop(); r.x = random.nextInt(WIDTH); r.y = random.nextInt(HEIGHT); r.speed = random.nextInt(5) + 2; rainDrops.add(r); }
+            updateTickerText();
+        }
+        
+        public void updateTickerText() {
+            if(highScores.isEmpty()) { tickerText = "AUCUN MEILLEUR SCORE. SOYEZ LE PREMIER ! --- "; return; }
+            StringBuilder sb = new StringBuilder("PANTHÉON : ");
+            for(HighScoreEntry entry : highScores) sb.append(String.format("%s: %d --- ", entry.name, entry.score));
+            tickerText = sb.toString();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            g.setColor(currentTheme.bgColor);
+            g.fillRect(0, 0, getWidth(), getHeight());
+
+            if (backgroundAnimationEnabled) {
+                g.setColor(new Color(0, 255, 128, 70));
+                for(RainDrop r : rainDrops) { g.fillRect(r.x, r.y, 2, 10); r.y += r.speed; if(r.y > getHeight()) { r.y = -10; r.x = random.nextInt(WIDTH); }}
+            }
+            
+            tickerX -= 2;
+            FontMetrics fm = g.getFontMetrics();
+            if(fm != null && tickerX < -fm.stringWidth(tickerText)) { tickerX = WIDTH; updateTickerText(); }
+            g.setFont(new Font("Monospaced", Font.PLAIN, 16));
+            g.setColor(Color.GRAY);
+            g.drawString(tickerText, tickerX, getHeight() - 20);
+        }
+    }
+
+    /**
+     * EN: The main entry point for the application.
+     * FR: Le point d'entrée principal de l'application.
+     * @param args Command line arguments (not used).
+     */
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             PacManGame game = new PacManGame();
