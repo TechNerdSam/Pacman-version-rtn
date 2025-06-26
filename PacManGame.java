@@ -1,3 +1,4 @@
+import javax.sound.sampled.*;
 import javax.swing.*;
 import javax.swing.Timer;
 import java.awt.*;
@@ -6,9 +7,11 @@ import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.awt.geom.Ellipse2D;
+import java.awt.geom.Point2D;
 import java.awt.geom.Rectangle2D;
 import java.io.*;
 import java.net.URI;
+import java.net.URL;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -190,6 +193,20 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
     private MenuBackgroundPanel menuBackgroundPanel;
     private Timer menuTimer;
     private boolean backgroundAnimationEnabled = true;
+    
+    private Timer glitchTimer;
+    private JLabel titleLabel;
+
+    private Timer fadeTimer;
+    private float fadeAlpha = 0f;
+    private boolean isFadingOut = false;
+    private String targetCard = "";
+
+    // =================================================================================
+    // Sound Management
+    // =================================================================================
+    private SoundManager soundManager;
+
 
     // =================================================================================
     // Power-ups
@@ -244,6 +261,8 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
         enemies = new ArrayList<>();
         random = new Random();
         highScores = new ArrayList<>();
+        
+        soundManager = new SoundManager();
 
         layeredPane = new JLayeredPane();
         layeredPane.setPreferredSize(new Dimension(WIDTH, HEIGHT));
@@ -286,14 +305,17 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
 
         JPanel mainMenuPanel = createTransparentPanel(new GridBagLayout());
         GridBagConstraints gbc = createGBC();
-        mainMenuPanel.add(createLabel("CYBER RUNNER", currentTheme.accentColor, new Font("Orbitron", Font.BOLD, 56), SwingConstants.CENTER), gbc);
+
+        titleLabel = createLabel("CYBER RUNNER", currentTheme.accentColor, new Font("Orbitron", Font.BOLD, 56), SwingConstants.CENTER);
+        mainMenuPanel.add(titleLabel, gbc);
+
         gbc.insets = new Insets(10, 0, 10, 0);
-        mainMenuPanel.add(new AnimatedButton("Nouvelle Partie", e -> menuCardLayout.show(menuContainerPanel, "LEVEL_SELECT")), gbc);
+        mainMenuPanel.add(new AnimatedButton("Nouvelle Partie", e -> transitionTo("LEVEL_SELECT")), gbc);
         mainMenuPanel.add(new AnimatedButton("Meilleurs Scores", e -> showHighScores()), gbc);
         mainMenuPanel.add(new AnimatedButton("Crédits", e -> showCredits()), gbc);
         mainMenuPanel.add(new AnimatedButton("Portfolio", e -> openURL("https://github.com/TechNerdSam")), gbc);
         mainMenuPanel.add(new AnimatedButton("Contact", e -> openURL("mailto:samynantoy@gmail.com")), gbc);
-        mainMenuPanel.add(new AnimatedButton("Options", e -> menuCardLayout.show(menuContainerPanel, "OPTIONS")), gbc);
+        mainMenuPanel.add(new AnimatedButton("Options", e -> transitionTo("OPTIONS")), gbc);
         mainMenuPanel.add(new AnimatedButton("Quitter", e -> System.exit(0)), gbc);
         
         JPanel levelSelectPanel = createTransparentPanel(new GridBagLayout());
@@ -308,7 +330,7 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
             levelGrid.add(levelButton);
         }
         levelSelectPanel.add(levelGrid, gbc);
-        levelSelectPanel.add(new AnimatedButton("Retour", e -> menuCardLayout.show(menuContainerPanel, "MAIN")), gbc);
+        levelSelectPanel.add(new AnimatedButton("Retour", e -> transitionTo("MAIN")), gbc);
         
         creditsPanel = createTransparentPanel(new GridBagLayout());
         
@@ -326,9 +348,10 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
             for(UITheme theme : UITheme.values()) {
                 if(theme.name.equals(selected)) { currentTheme = theme; break; }
             }
+            titleLabel.setForeground(currentTheme.accentColor);
         });
         optionsPanel.add(themeSelector, gbc);
-        optionsPanel.add(new AnimatedButton("Retour", e -> menuCardLayout.show(menuContainerPanel, "MAIN")), gbc);
+        optionsPanel.add(new AnimatedButton("Retour", e -> transitionTo("MAIN")), gbc);
 
         menuContainerPanel.add(mainMenuPanel, "MAIN");
         menuContainerPanel.add(levelSelectPanel, "LEVEL_SELECT");
@@ -338,7 +361,6 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
         layeredPane.add(menuBackgroundPanel, JLayeredPane.DEFAULT_LAYER, 0);
         layeredPane.add(menuContainerPanel, JLayeredPane.PALETTE_LAYER, 1);
         
-        // --- Redesign "Game Over" Panel ---
         endScreenPanel = new JPanel();
         endScreenPanel.setBounds(0, 0, WIDTH, HEIGHT);
         endScreenPanel.setBackground(new Color(10, 5, 15, 235));
@@ -361,7 +383,6 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
         endScreenPanel.add(new AnimatedButton("Quitter au Menu", e -> showMenu()), gbcEnd);
         layeredPane.add(endScreenPanel, JLayeredPane.MODAL_LAYER, 2);
         
-        // --- Redesign "High Scores" Panel ---
         highScoresPanel = new JPanel();
         highScoresPanel.setBounds(0, 0, WIDTH, HEIGHT);
         highScoresPanel.setBackground(new Color(10, 5, 15, 245));
@@ -373,9 +394,9 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
         gbcHigh.insets = new Insets(10, 0, 10, 0);
         gbcHigh.fill = GridBagConstraints.HORIZONTAL;
         
-        JLabel titleLabel = createLabel("PANTHÉON DES HACKERS", new Color(0, 200, 255), new Font("Ebrima", Font.BOLD, 40), SwingConstants.CENTER);
+        JLabel highScoresTitleLabel = createLabel("PANTHÉON DES HACKERS", new Color(0, 200, 255), new Font("Ebrima", Font.BOLD, 40), SwingConstants.CENTER);
         gbcHigh.insets = new Insets(0, 0, 40, 0);
-        highScoresPanel.add(titleLabel, gbcHigh);
+        highScoresPanel.add(highScoresTitleLabel, gbcHigh);
 
         highScoresDisplay = new JTextArea(10, 30);
         highScoresDisplay.setEditable(false);
@@ -394,8 +415,26 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
         gbcHigh.insets = new Insets(40, 0, 10, 0);
         highScoresPanel.add(new AnimatedButton("Retour au Menu", e -> showMenu()), gbcHigh);
         layeredPane.add(highScoresPanel, JLayeredPane.MODAL_LAYER, 3);
+        
+        fadeTimer = new Timer(25, e -> {
+            if (isFadingOut) {
+                fadeAlpha += 0.1f;
+                if (fadeAlpha >= 1.0f) {
+                    fadeAlpha = 1.0f;
+                    menuCardLayout.show(menuContainerPanel, targetCard);
+                    isFadingOut = false;
+                }
+            } else {
+                fadeAlpha -= 0.1f;
+                if (fadeAlpha <= 0.0f) {
+                    fadeAlpha = 0.0f;
+                    fadeTimer.stop();
+                }
+            }
+            layeredPane.repaint();
+        });
     }
-    
+
     /**
      * EN: Creates a GridBagConstraints object with default settings for the menu UI.
      * FR: Crée un objet GridBagConstraints avec des paramètres par défaut pour l'interface utilisateur du menu.
@@ -465,6 +504,7 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
      */
     private void openURL(String url) {
         try {
+            soundManager.play("click");
             Desktop.getDesktop().browse(new URI(url));
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Impossible d'ouvrir le lien.", "Erreur", JOptionPane.ERROR_MESSAGE);
@@ -487,11 +527,11 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
         creditsPanel.add(createLabel("Inspiré par les jeux de labyrinthe classiques.", Color.GRAY, new Font("Ebrima", Font.ITALIC, 18), SwingConstants.CENTER), gbc);
         
         gbc.insets = new Insets(50,0,15,0);
-        creditsPanel.add(new AnimatedButton("Retour", e -> menuCardLayout.show(menuContainerPanel, "MAIN")), gbc);
+        creditsPanel.add(new AnimatedButton("Retour", e -> transitionTo("MAIN")), gbc);
 
         creditsPanel.revalidate();
         creditsPanel.repaint();
-        menuCardLayout.show(menuContainerPanel, "CREDITS");
+        transitionTo("CREDITS");
     }
 
     /**
@@ -507,9 +547,24 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
         gridCols = WIDTH / CELL_SIZE;
         gridRows = HEIGHT / CELL_SIZE;
         gameTimer = new Timer(16, this);
-        menuTimer = new Timer(40, e -> { if(currentGameState == GameState.MENU) menuBackgroundPanel.repaint(); });
+
+        glitchTimer = new Timer(100, e -> {
+            if(currentGameState == GameState.MENU) {
+                if (random.nextInt(10) < 2) {
+                    int offsetX = random.nextInt(11) - 5;
+                    int offsetY = random.nextInt(7) - 3;
+                    titleLabel.setLocation(titleLabel.getX() + offsetX, titleLabel.getY() + offsetY);
+                    Timer resetTimer = new Timer(50, ae -> titleLabel.setLocation(titleLabel.getX() - offsetX, titleLabel.getY() - offsetY));
+                    resetTimer.setRepeats(false);
+                    resetTimer.start();
+                }
+            }
+        });
+
+        menuTimer = new Timer(16, e -> { if(currentGameState == GameState.MENU) menuBackgroundPanel.repaint(); });
         gameTimer.stop();
         menuTimer.stop();
+        glitchTimer.stop();
     }
     
     /**
@@ -517,6 +572,8 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
      * FR: Démarre le jeu, en masquant le menu et en affichant le panneau de jeu.
      */
     private void startGame() {
+        soundManager.stop("menu_music");
+        
         setMenuUIVisible(false);
         currentGameState = GameState.PLAYING;
         score = 0;
@@ -692,8 +749,22 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
         gamePanel.setVisible(false);
         gameTimer.stop();
         menuTimer.start();
-        menuCardLayout.show(menuContainerPanel, "MAIN");
+        
+        soundManager.loop("menu_music");
+        
+        glitchTimer.start();
+
+        transitionTo("MAIN");
         this.requestFocusInWindow();
+    }
+    
+    private void transitionTo(String cardName) {
+        if (fadeTimer.isRunning() || cardName.equals(targetCard)) return;
+        
+        soundManager.play("navigate");
+        targetCard = cardName;
+        isFadingOut = true;
+        fadeTimer.start();
     }
     
     /**
@@ -704,7 +775,13 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
     private void setMenuUIVisible(boolean visible) {
         menuBackgroundPanel.setVisible(visible);
         menuContainerPanel.setVisible(visible);
-        if(visible) menuTimer.start(); else menuTimer.stop();
+        if(visible) {
+            menuTimer.start();
+            glitchTimer.start();
+        } else {
+            menuTimer.stop();
+            glitchTimer.stop();
+        }
     }
     
     /**
@@ -720,7 +797,14 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
     private void restartGame() { showMenu(); }
     
     @Override
-    public void paint(Graphics g) { super.paint(g); }
+    public void paint(Graphics g) {
+        super.paint(g);
+        if (fadeTimer.isRunning()) {
+            Graphics2D g2d = (Graphics2D) layeredPane.getGraphics();
+            g2d.setColor(new Color(10, 5, 25, (int)(fadeAlpha * 255)));
+            g2d.fillRect(0, 0, getWidth(), getHeight());
+        }
+    }
     
     /**
      * EN: The main game panel where the game is rendered.
@@ -1133,6 +1217,9 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
         }
         highScoresDisplay.setText(sb.toString());
         highScoresDisplay.setCaretPosition(0);
+        
+        creditsPanel.setVisible(false);
+        
         this.requestFocusInWindow();
     }
 
@@ -1148,7 +1235,12 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
         public AnimatedButton(String text) { this(text, null); }
         public AnimatedButton(String text, ActionListener listener) {
             super(text);
-            if (listener != null) addActionListener(listener);
+            if (listener != null) {
+                addActionListener(e -> {
+                    soundManager.play("click");
+                    listener.actionPerformed(e);
+                });
+            }
             setContentAreaFilled(false); setBorderPainted(false); setFocusPainted(false);
             setForeground(Color.CYAN); setFont(new Font("Orbitron", Font.BOLD, 24));
             setCursor(new Cursor(Cursor.HAND_CURSOR));
@@ -1159,20 +1251,41 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
                 if (hoverAnimation == 0f || hoverAnimation == 1f) ((Timer)e.getSource()).stop();
             });
             addMouseListener(new java.awt.event.MouseAdapter() {
-                public void mouseEntered(java.awt.event.MouseEvent evt) { if (!animationTimer.isRunning()) animationTimer.start(); }
+                public void mouseEntered(java.awt.event.MouseEvent evt) { 
+                    soundManager.play("hover");
+                    if (!animationTimer.isRunning()) animationTimer.start(); 
+                }
                 public void mouseExited(java.awt.event.MouseEvent evt) { if (!animationTimer.isRunning()) animationTimer.start(); }
             });
         }
         @Override protected void paintComponent(Graphics g) {
             Graphics2D g2d = (Graphics2D) g.create();
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            
+            int width = getWidth();
+            int height = getHeight();
+            int baseWidth = 220;
+            int baseHeight = 30;
+
+            // Halo lumineux de survol
             if (hoverAnimation > 0) {
-                int glowSize = (int) (10 * hoverAnimation);
-                g2d.setColor(new Color(0, 255, 255, (int) (150 * hoverAnimation)));
-                g2d.fillRoundRect(getWidth() / 2 - (150 + glowSize) / 2, getHeight() / 2 - (25 + glowSize) / 2, 150 + glowSize, 25 + glowSize, 20, 20);
+                int glowSize = (int) (12 * hoverAnimation);
+                g2d.setColor(new Color(0, 255, 255, (int) (70 * hoverAnimation)));
+                g2d.fillRoundRect(width / 2 - (baseWidth + glowSize) / 2, height / 2 - (baseHeight + glowSize) / 2, baseWidth + glowSize, baseHeight + glowSize, 30, 30);
             }
+            
+            // Contour du bouton
             g2d.setColor(Color.CYAN);
-            g2d.drawRoundRect(getWidth()/2 - 150/2, getHeight()/2 - 25/2, 150, 25, 15, 15);
+            g2d.setStroke(new BasicStroke(1.5f));
+            g2d.drawRoundRect(width/2 - baseWidth/2, height/2 - baseHeight/2, baseWidth, baseHeight, 20, 20);
+
+            // Changer la couleur du texte au survol
+            if(hoverAnimation > 0.5f){
+                setForeground(Color.WHITE);
+            } else {
+                setForeground(Color.CYAN);
+            }
+            
             super.paintComponent(g);
             g2d.dispose();
         }
@@ -1185,41 +1298,229 @@ public class PacManGame extends JFrame implements KeyListener, ActionListener {
      * FR: Un panneau pour afficher un arrière-plan animé dans le menu.
      */
     private class MenuBackgroundPanel extends JPanel {
-        private class RainDrop { int x, y, speed; } private List<RainDrop> rainDrops;
-        private int tickerX = WIDTH; private String tickerText = "";
+        private final List<GridPoint> gridPoints = new ArrayList<>();
+        private final List<DataShard> dataShards = new ArrayList<>();
+        private final List<GlitchSquare> glitchSquares = new ArrayList<>();
+        private final List<PulseWave> pulseWaves = new ArrayList<>();
+        private long lastPulseTime = 0;
         
-        public MenuBackgroundPanel() {
-            rainDrops = new ArrayList<>();
-            for(int i = 0; i < 100; i++) { RainDrop r = new RainDrop(); r.x = random.nextInt(WIDTH); r.y = random.nextInt(HEIGHT); r.speed = random.nextInt(5) + 2; rainDrops.add(r); }
-            updateTickerText();
-        }
-        
-        public void updateTickerText() {
-            if(highScores.isEmpty()) { tickerText = "AUCUN MEILLEUR SCORE. SOYEZ LE PREMIER ! --- "; return; }
-            StringBuilder sb = new StringBuilder("PANTHÉON : ");
-            for(HighScoreEntry entry : highScores) sb.append(String.format("%s: %d --- ", entry.name, entry.score));
-            tickerText = sb.toString();
+        private class GridPoint {
+            float x, y, brightness;
+            double angle;
+            GridPoint(float x, float y) {
+                this.x = x; this.y = y;
+                this.angle = random.nextDouble() * 2 * Math.PI;
+            }
+            void update() { 
+                angle += 0.02;
+                brightness = (float)(Math.sin(angle) + 1) / 2f; 
+            }
         }
 
+        private class DataShard {
+            float x, y, speed, length;
+            int alpha;
+            DataShard() { reset(); this.y = random.nextInt(HEIGHT); }
+            void update() {
+                x += speed; y += speed;
+                if (x > WIDTH || y > HEIGHT) reset();
+            }
+            void reset() {
+                x = -50; y = random.nextInt(HEIGHT);
+                speed = 2 + random.nextFloat() * 4;
+                length = 15 + random.nextFloat() * 50;
+                alpha = 60 + random.nextInt(100);
+            }
+        }
+        
+        private class GlitchSquare {
+            int x, y, size, life;
+            Color color;
+            GlitchSquare() {
+                x = random.nextInt(WIDTH); y = random.nextInt(HEIGHT);
+                size = 5 + random.nextInt(15);
+                life = 5 + random.nextInt(15);
+                color = random.nextBoolean() ? new Color(0, 255, 255) : new Color(255, 0, 255);
+            }
+            boolean update() { life--; return life > 0; }
+        }
+        
+        private class PulseWave {
+            float radius = 0;
+            float maxRadius = 1200;
+            float speed = 3f;
+            float alpha = 1.0f;
+
+            boolean update() {
+                radius += speed;
+                if (radius > maxRadius) return false;
+                alpha = 1.0f - (radius / maxRadius);
+                return true;
+            }
+        }
+
+        public MenuBackgroundPanel() {
+            int gridSpacing = 40;
+            for (int i = 0; i < WIDTH; i += gridSpacing) {
+                for (int j = 0; j < HEIGHT; j += gridSpacing) {
+                    gridPoints.add(new GridPoint(i, j));
+                }
+            }
+            for (int i = 0; i < 30; i++) dataShards.add(new DataShard());
+        }
+        
         @Override
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
-            g.setColor(currentTheme.bgColor);
-            g.fillRect(0, 0, getWidth(), getHeight());
+            Graphics2D g2d = (Graphics2D) g;
+            
+            // Fond fixe
+            g2d.setColor(new Color(10, 5, 25));
+            g2d.fillRect(0, 0, getWidth(), getHeight());
 
-            if (backgroundAnimationEnabled) {
-                g.setColor(new Color(0, 255, 128, 70));
-                for(RainDrop r : rainDrops) { g.fillRect(r.x, r.y, 2, 10); r.y += r.speed; if(r.y > getHeight()) { r.y = -10; r.x = random.nextInt(WIDTH); }}
+            if (!backgroundAnimationEnabled) return;
+            
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            
+            // Fond en dégradé radial pulsant
+            float pulse = (float)(Math.sin(System.currentTimeMillis() * 0.0002) + 1) / 2f;
+            Point2D center = new Point2D.Float(WIDTH / 2f, HEIGHT / 2f);
+            float radius = 400 + pulse * 200;
+            float[] dist = {0.0f, 1.0f};
+            Color[] colors = {new Color(100, 80, 220, 100), new Color(10, 5, 25, 150)};
+            RadialGradientPaint rgp = new RadialGradientPaint(center, radius, dist, colors);
+            g2d.setPaint(rgp);
+            g2d.fillRect(0, 0, WIDTH, HEIGHT);
+
+            // 1. Grille de données connectée
+            for (GridPoint p : gridPoints) {
+                p.update();
+                g2d.setColor(new Color(180, 200, 255, (int)(p.brightness * 70)));
+                g2d.fill(new Ellipse2D.Float(p.x-1, p.y-1, 3, 3));
+                
+                // Dessiner des connexions aléatoires
+                if (random.nextInt(1000) < 5) {
+                    GridPoint p2 = gridPoints.get(random.nextInt(gridPoints.size()));
+                    g2d.setStroke(new BasicStroke(0.5f));
+                    g2d.setColor(new Color(150, 180, 255, 30));
+                    g2d.drawLine((int)p.x, (int)p.y, (int)p2.x, (int)p2.y);
+                }
+            }
+
+            // 2. Ondes de choc
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastPulseTime > 3000) {
+                pulseWaves.add(new PulseWave());
+                lastPulseTime = currentTime;
             }
             
-            tickerX -= 2;
-            FontMetrics fm = g.getFontMetrics();
-            if(fm != null && tickerX < -fm.stringWidth(tickerText)) { tickerX = WIDTH; updateTickerText(); }
-            g.setFont(new Font("Monospaced", Font.PLAIN, 16));
-            g.setColor(Color.GRAY);
-            g.drawString(tickerText, tickerX, getHeight() - 20);
+            Iterator<PulseWave> waveIterator = pulseWaves.iterator();
+            while(waveIterator.hasNext()){
+                PulseWave wave = waveIterator.next();
+                if(wave.update()){
+                    g2d.setColor(new Color(200, 220, 255, (int)(wave.alpha * 50)));
+                    g2d.setStroke(new BasicStroke(2f));
+                    g2d.draw(new Ellipse2D.Float(WIDTH/2f - wave.radius, HEIGHT/2f - wave.radius, wave.radius*2, wave.radius*2));
+                } else {
+                    waveIterator.remove();
+                }
+            }
+            
+            // 3. Particules cosmiques (anciennement DataShards)
+            for (DataShard shard : dataShards) {
+                shard.update();
+                GradientPaint gp = new GradientPaint(shard.x, shard.y, new Color(220, 240, 255, (int)(shard.alpha * 0.8)), 
+                                                     shard.x - shard.length, shard.y - shard.length, new Color(150, 180, 255, 0));
+                g2d.setPaint(gp);
+                g2d.setStroke(new BasicStroke(2f));
+                g2d.drawLine((int)shard.x, (int)shard.y, (int)(shard.x - shard.length), (int)(shard.y - shard.length));
+            }
+            
+            // 4. Carrés "glitch"
+            if (random.nextInt(10) < 2) {
+                glitchSquares.add(new GlitchSquare());
+            }
+            
+            Iterator<GlitchSquare> iterator = glitchSquares.iterator();
+            while(iterator.hasNext()) {
+                GlitchSquare sq = iterator.next();
+                if (sq.update()) {
+                    g2d.setColor(new Color(sq.color.getRed(), sq.color.getGreen(), sq.color.getBlue(), random.nextInt(150) + 50));
+                    g2d.fillRect(sq.x, sq.y, sq.size, sq.size);
+                } else {
+                    iterator.remove();
+                }
+            }
         }
     }
+
+    /**
+     * EN: A simple sound manager class.
+     * FR: Classe de gestion simplifiée du son.
+     */
+    private class SoundManager {
+        private Clip menuMusic, hoverSound, clickSound, navigateSound;
+
+        public SoundManager() {
+            // Assurez-vous que les fichiers .wav sont dans un dossier "sounds" à la racine de votre classpath.
+            menuMusic = loadClip("/sounds/menu_music.wav");
+            hoverSound = loadClip("/sounds/hover.wav");
+            clickSound = loadClip("/sounds/click.wav");
+            navigateSound = loadClip("/sounds/navigate.wav");
+        }
+
+        private Clip loadClip(String path) {
+            try {
+                URL url = this.getClass().getResource(path);
+                if (url == null) {
+                    System.err.println("Can't find sound file: " + path);
+                    return null;
+                }
+                AudioInputStream audioIn = AudioSystem.getAudioInputStream(url);
+                Clip clip = AudioSystem.getClip();
+                clip.open(audioIn);
+                return clip;
+            } catch (Exception e) {
+                System.err.println("Error loading sound: " + path);
+                return null;
+            }
+        }
+
+        public void play(String soundName) {
+            Clip clip = getClip(soundName);
+            if (clip != null) {
+                if (clip.isRunning()) clip.stop();
+                clip.setFramePosition(0);
+                clip.start();
+            }
+        }
+
+        public void loop(String soundName) {
+            Clip clip = getClip(soundName);
+            if (clip != null && !clip.isRunning()) {
+                clip.setFramePosition(0);
+                clip.loop(Clip.LOOP_CONTINUOUSLY);
+            }
+        }
+
+        public void stop(String soundName) {
+            Clip clip = getClip(soundName);
+            if (clip != null && clip.isRunning()) {
+                clip.stop();
+            }
+        }
+
+        private Clip getClip(String name) {
+            switch (name) {
+                case "menu_music": return menuMusic;
+                case "hover": return hoverSound;
+                case "click": return clickSound;
+                case "navigate": return navigateSound;
+                default: return null;
+            }
+        }
+    }
+
 
     /**
      * EN: The main entry point for the application.
